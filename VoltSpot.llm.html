@@ -119,7 +119,6 @@ G	1	0
 V	3	0
 G	4	0
 ... ... ...
- 
 G	16	23
 V	17	23
 </document_content>
@@ -342,15 +341,7 @@ and VoltSpot will load all layers' TSV distributions from the .tsvloc files spec
 the .lcf file. To simulate voltage-stacked PDNs, the -v_stacking parameter should be set to 1,
 and the locations of the integrated SC converters can be configured through -IVR_loc_file.
 For more information on V-S PDN, please refer to our DAC15 and ISLPED15 papers.
-CONCLUSION
-----------
-While this document has attempted to provide a detailed overview of
-VoltSpot's capabilities and guidelines for its use, the maximum amount
-of information can be obtained only from the source code itself.
-In case of further questions, please send e-mail to the joint HotSpot/VoltSpot 
-user group at the address "hotspot AT virginia.edu". 
-To subscribe to the list, please visit
-https://lists.virginia.edu/sympa/info/hotspot.
+ 
 </document_content>
 </document>
 <document index="10">
@@ -4450,7 +4441,10 @@ void switch_SCconverters(model_t *model, int counter, int intvl);
 <source>README-2.0</source>
 <document_content>
 VoltSpot-2.0 Changes
- 
+-------------------------
+Contact: Mircea Stan, mircea@virginia.edu
+For more information and a list of related publications, 
+visit http://lava.cs.virginia.edu/VoltSpot/.
 1. New in VoltSpot 2.0
 	a) An extension for 3D-ICs' PDN simulation. Both steady-state
   and transient mode are supported. TSVs are modeled as RL pairs.
@@ -4469,8 +4463,6 @@ VoltSpot-2.0 Changes
 <document index="17">
 <source>README_archive/README-1.0</source>
 <document_content>
-VoltSpot 1.0 - Information Manual
---------------------------------
  
 VoltSpot source code has the following files:
 0. Makefile - for building VoltSpot
@@ -4494,15 +4486,7 @@ VoltSpot source code has the following files:
 	   PDN_sim.c through function calls. 
 6. util.h and util.c - miscellaneous utilities for printing error messages,
 finding max of two numbers, array construction/destruction etc.
-CONTACT (E-MAILING LIST)
-------------------------
-VoltSpot can be downloaded following the instructions at
-http://lava.cs.virginia.edu/VoltSpot. In order to exchange comments, questions
-and answers amidst the users of VoltSpot, we have created an joint e-mailing list
-with HotSpot community. We will try to monitor this list and respond to questions 
-as quickly as possible. One can subscribe to this list by visiting
-http://www.cs.virginia.edu/mailman/listinfo/hotspot . This list is archived and
-messages can be sent to it by e-mailing 'hotspot at cs dot virginia dot edu' 
+ 
 </document_content>
 </document>
 <document index="18">
@@ -4610,6 +4594,15 @@ L2_2	0.00538191	0.00525208	0.00538191	0
 </document_content>
 </document>
 <document index="20">
+<source>example.ptrace</source>
+<document_content>
+ICache1	BTB1	BrP1	InstBuf1	InstDec1	IntRAT1	FlpRAT1	FL1	DCache1	LdQ1	StQ1	Itlb1	Dtlb1	IntRF1	FlpRF1	IntIW1	FlpIW1	ROB1	ALU1	FPU1	CplALU1	ICache2	BTB2	BrP2	InstBuf2	InstDec2	IntRAT2	FlpRAT2	FL2	DCache2	LdQ2	StQ2	Itlb2	Dtlb2	IntRF2	FlpRF2	IntIW2	FlpIW2	ROB2	ALU2	FPU2	CplALU2	NoC1	NoC2	L2_1	L2_2	MC1	
+0.041317	0.024366	0.078987	0.000862	0.325606	0.711282	0.011022	0.076530	0.368112	0.137571	0.680707	0.006080	0.018045	0.030626	0.017987	0.082269	0.032778	0.668003	2.438289	1.330769	0.167462	0.041317	0.024366	0.014261	0.047923	0.657421	1.036382	0.240651	0.086399	0.368112	0.005238	0.053879	0.006080	0.018045	0.058305	0.033752	0.305777	0.194535	0.535456	2.670714	1.714015	0.186831	0	0	0.936133	0.936133	0.273052	
+......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......    ......        ......    ......         
+0.041317	0.024366	0.014261	0.047923	0.657421	0.015959	0.011022	0.000472	0.368112	0.005238	0.053879	0.006080	0.018045	0.042738	0.003355	0.164650	0.139425	0.280928	1.864196	0.975065	0.149485	0.284873	0.114701	0.078987	0.000862	0.325606	0.467952	0.011022	0.053814	0.368112	0.005238	0.053879	0.122272	0.018045	0.037242	0.021755	0.099764	0.039610	0.351707	2.135473	2.497484	0.172091	0	0	0.936133	0.936133	0.273052	
+</document_content>
+</document>
+<document index="21">
 <source>example.senloc</source>
 <document_content>
 # Line Format: <sensor_location_s>\t<sensor_location_y>
@@ -4622,7 +4615,7 @@ L2_2	0.00538191	0.00525208	0.00538191	0
 36 36
 </document_content>
 </document>
-<document index="21">
+<document index="22">
 <source>example.vgrid.padloc</source>
 <document_content>
 # Lines starting with # are used for commenting
@@ -4633,14 +4626,14 @@ L2_2	0.00538191	0.00525208	0.00538191	0
 V	4	72
 G	6	72
 V	12	72
-V	36	72
-G	38	72
-V	44	72
+G	14	72
 ... ... ...
+V	68	0
+G	70	0
 V	72	0
 </document_content>
 </document>
-<document index="22">
+<document index="23">
 <source>flp.c</source>
 <document_content>
 #include <stdio.h>
@@ -5273,7 +5266,7 @@ double PDN_get_total_height(PDN_flp_t *flp)
 //}
 </document_content>
 </document>
-<document index="23">
+<document index="24">
 <source>flp.h</source>
 <document_content>
 #ifndef __FLP_H_
@@ -5383,7 +5376,7 @@ double PDN_get_total_height(PDN_flp_t *flp);
 #endif
 </document_content>
 </document>
-<document index="24">
+<document index="25">
 <source>matrix.c</source>
 <document_content>
 #include <stdio.h>
@@ -9073,7 +9066,7 @@ void Finalize_rhs(model_t *model, model_vector_t *power)
 }
 </document_content>
 </document>
-<document index="25">
+<document index="26">
 <source>pad.c</source>
 <document_content>
 #include <stdio.h>
@@ -9720,7 +9713,7 @@ int count_pads(int **loc, int nr, int nc, int pad_type)
 }
 </document_content>
 </document>
-<document index="26">
+<document index="27">
 <source>pad.h</source>
 <document_content>
 #ifndef __PAD_H_
@@ -9746,7 +9739,7 @@ void dump_cur_with_cordt(model_t *model, status_t *status, char *file);
 #endif
 </document_content>
 </document>
-<document index="27">
+<document index="28">
 <source>pdn.config</source>
 <document_content>
 # PDN physical parameters
@@ -9863,7 +9856,7 @@ void dump_cur_with_cordt(model_t *model, status_t *status, char *file);
   #-PDN_pkg_scale      1         # Area_chip/Area_domain
 </document_content>
 </document>
-<document index="28">
+<document index="29">
 <source>plot_onchipIR.pl</source>
 <document_content>
 #!/usr/bin/perl
@@ -9954,7 +9947,7 @@ close $F_plot;
 system ("rm IR.dat -f");
 </document_content>
 </document>
-<document index="29">
+<document index="30">
 <source>plot_padloc.pl</source>
 <document_content>
 #!/usr/bin/perl
@@ -10048,25 +10041,22 @@ close $F_plot_v;
 close $F_plot_g;
 </document_content>
 </document>
-<document index="30">
+<document index="31">
 <source>steady.gridIR</source>
 <document_content>
 #Layer:0
 0	72	0.121134
+1	72	0.133823
 ... ... ...
-24	2	0.079329
-25	2	0.081660
-26	2	0.079329
-27	2	0.081660
+40	0	0.078362 
 </document_content>
 </document>
-<document index="31">
+<document index="32">
 <source>trans.viomap</source>
 <document_content>
 0	73	1	0.151128	5.096285
 1	73	2	0.163924	5.122604
-... ... ... ...
-71	1	3	0.109608	5.067426
+... ... ... ... ...
 72	1	2	0.107067	5.036376
 END_OF_PER_NODE_STATS
 MC1	38	7.249590
@@ -10118,7 +10108,7 @@ NoC2	10	5.471312
 L2_2	8	5.461321
 </document_content>
 </document>
-<document index="32">
+<document index="33">
 <source>trans.vtrace</source>
 <document_content>
 PDN_grid_intv=2
@@ -10181,16 +10171,12 @@ END_OF_CONFIGS
 pkgDrop	max_onchip_drop	
 0.0224	0.5441	
 0.2295	1.4570	
-0.6212	1.7154	
-... ...
-1.0908	1.6548	
-0.6144	0.8888	
-0.1315	0.2900	
+......     ......
 -0.3579	-0.2028	
 #END
 </document_content>
 </document>
-<document index="33">
+<document index="34">
 <source>util.c</source>
 <document_content>
 #include <stdio.h>
@@ -11333,7 +11319,7 @@ void int_to_str(int input, int width, char *strOut)
 }
 </document_content>
 </document>
-<document index="34">
+<document index="35">
 <source>util.h</source>
 <document_content>
 #ifndef __UTIL_H
@@ -11522,7 +11508,7 @@ int c2c_cmp( const void *a , const void *b);
 #endif
 </document_content>
 </document>
-<document index="35">
+<document index="36">
 <source>voltspot.c</source>
 <document_content>
 /* 
@@ -11996,7 +11982,7 @@ int main(int argc, char **argv)
 }
 </document_content>
 </document>
-<document index="36">
+<document index="37">
 <source>voltspot.h</source>
 <document_content>
 #ifndef __VOLTSPOT_H_
