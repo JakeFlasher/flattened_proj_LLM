@@ -1,0 +1,1090 @@
+```revised_intro.text
+\documentclass[10pt,journal,compsoc]{IEEEtran}
+% ---------------------------- Packages ----------------------------
+\usepackage{amsmath,amsfonts,amssymb,mathtools,bm}
+\usepackage{algorithm,algpseudocode}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage[nocompress]{cite}
+\usepackage{url}
+\usepackage{amsthm}
+% ---------------------------- Macros ----------------------------
+\newcommand{\name}{VitaBeta}
+\newcommand{\pts}{\textsc{PTS}}
+\newcommand{\gam}{\textsc{GAM}}
+\newcommand{\cpd}{\textsc{CPD}}
+\newcommand{\pelt}{\textsc{PELT}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+% Consistent terminology
+% - Use "retire group(s)" (ROB emission groups)
+% - Use "microarchitectural" (no hyphen)
+% - Use "speedup" (not speed-up)
+% - First mention: "superscalar, out-of-order (OoO) cores"; thereafter "OoO"
+% - Use lowercase "workloads" unless a proper name
+% Theorem-like environments
+\newtheorem{proposition}{Proposition}
+% ---------------------------- Title & Authors ----------------------------
+\title{Learning Phase-Transition Signals from Group-Average Constraints for Fine-Grained Trace Pruning}
+\author{
+  Chengao~Shi,
+  Zhenguo~Liu,~\IEEEmembership{Student Member,~IEEE,}
+  Chen~Ding,~\IEEEmembership{Member,~IEEE,}
+  and~Jiang~Xu,~\IEEEmembership{Member,~IEEE}
+  \IEEEcompsocitemizethanks{
+    \IEEEcompsocthanksitem Chengao Shi is with the Department of Electronic and Computer Engineering, The Hong Kong University of Science and Technology.
+    \IEEEcompsocthanksitem Zhenguo Liu and Jiang Xu are with Microelectronics Thrust, The Hong Kong University of Science and Technology (Guangzhou).
+    \IEEEcompsocthanksitem Chen Ding is with the Department of Computer Science, University of Rochester.
+  }
+}
+\markboth{Submission to ML-centered venue — Methods-only Draft}{Shi \textit{et al.}: Learning Phase-Transition Signals from Group-Average Constraints}
+% Optional abstract to orient ML readers; remove if your track forbids abstracts in methods-only submissions.
+\IEEEtitleabstractindextext{%
+\begin{abstract}
+Cycle-accurate architectural simulation is indispensable but slow, even when representative regions are chosen by profile-driven sampling. We present a learning-based, simulator-agnostic framework that accelerates detailed simulation by preserving compact instruction neighborhoods around microarchitectural phase transitions and pruning stable spans inside already-selected regions. The key idea is to learn a contiguous per-instruction \emph{Phase-Transition Signal} (\pts) whose retire-group averages are constrained to match observable \emph{anchors} (e.g., instructions-per-cycle per retire group). This places the task at the intersection of \emph{learning from aggregates} (also known as learning from label proportions) and \emph{masked imputation} for structured sequences. Exact change-point detection (\pelt) with autoregressive segment costs applied to \pts identifies transition boundaries; a budget-matching windowing algorithm then selects neighborhoods to keep. The method composes orthogonally with SimPoint and LoopPoint: it operates \emph{within} their regions without altering upstream selection or weights. We formalize the group-average constraint, provide an affine identifiability result under standardized anchors, and detail a learning-free surrogate for deployments without training. This document targets ML reviewers and therefore includes self-contained background on architectural sampling, learning-from-aggregates, and offline change-point detection, together with a comprehensive methodology. No experimental results are included.
+\end{abstract}
+\begin{IEEEkeywords}
+Weak supervision, learning from aggregates, time-series imputation, change-point detection, architectural simulation, sampling, Transformers
+\end{IEEEkeywords}
+}
+\begin{document}
+\maketitle
+% =====================================================================
+% Introduction
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+Architectural researchers rely on cycle-accurate simulators to evaluate design choices, but faithfully executing billions of dynamic instructions on modern superscalar, out-of-order (OoO) cores remains prohibitively slow. Profile-driven \emph{region selection} mitigates cost by simulating only representative parts of a program. Two widely used techniques are:
+\begin{enumerate}[leftmargin=*,nosep]
+  \item \textbf{SimPoint method}~\cite{simpoint-asplos02,simpoint03,simpoint-howto}: characterizes each fixed-size region by a Basic Block Vector (BBV), clusters those vectors, and chooses one or more \emph{simulation points} (SPs) per cluster. In this paper we use “\emph{SimPoint method}” for the technique and “\emph{SPs}” for the resulting points to avoid ambiguity.
+  \item \textbf{LoopPoint}~\cite{looppoint-hpca22}: analyzes loop structure to carve repeatable, loop-aligned regions in multi-threaded apps, then builds micro-checkpoints. LoopPoint denotes representative regions via \emph{Region IDs} (RIDs).
+\end{enumerate}
+Even \emph{inside} these representative regions we empirically observe long spans whose local dynamics are microarchitecturally stable. Re-sampling at the region level (e.g., “more SPs” or “more RIDs”) often underutilizes the instruction budget because warmup is repeatedly paid and stable spans persist. Our view is complementary: once a region is selected, \emph{how} can we simulate it faster by preserving short neighborhoods around \emph{phase transitions} and pruning the intervening stable spans—without losing fidelity on end metrics such as IPC and cache behavior?
+We address this by learning a contiguous, per-instruction \emph{Phase-Transition Signal} (\pts) from a single profiling pass. The \pts is trained so that its \emph{retire-group average} equals an observed \emph{anchor} (e.g., instructions-per-cycle measured per retire group emitted by the reorder buffer), thus ensuring aggregate consistency without assuming well-defined instruction-level timing. We then apply exact change-point detection (\pelt) with autoregressive segment costs to \pts to identify transition boundaries. Finally, we preserve compact windows around those boundaries to meet a user-chosen reduction budget. The output is a keep-list that composes \emph{within} any SimPoint/LoopPoint region; upstream region weights remain unchanged.
+This paper targets an ML-centered audience. We therefore provide:
+(1) concise introductions to SimPoint/LoopPoint and architectural sampling;
+(2) a self-contained view of \emph{learning from aggregates} (learning from label proportions) and \emph{masked imputation} for structured sequences;
+(3) a principled segmentation step via offline \emph{change-point detection} (\cpd);
+(4) a formal statement on affine identifiability under standardized anchors.
+\subsection*{Contributions}
+\begin{itemize}[leftmargin=*,noitemsep,topsep=0pt]
+  \item \textbf{Problem formulation for phase-sensitive pruning.} We model “phase transitions” as statistical change points in a contiguous per-instruction latent (\pts) learned under retire-group aggregate constraints, enabling a budget-matched keep-list \emph{within} already sampled regions.
+  \item \textbf{Weakly supervised sequence learning.} We cast training as imputation with \emph{group-average matching} (\gam): the mean \pts per retire group equals a standardized anchor. We provide an affine identifiability result under this constraint.
+  \item \textbf{Exact segmentation and budget matching.} We use \pelt\ with autoregressive costs for \cpd, followed by an adaptive windowing algorithm that meets a target reduction.
+  \item \textbf{Learning-free fallback.} We detail a heuristic, contiguous surrogate (\S\ref{subsec:beta}) that requires no training yet supports the same \cpd+windowing pipeline.
+  \item \textbf{Composability.} The method is simulator-agnostic and orthogonal to region selection: it runs \emph{inside} SimPoint/LoopPoint regions without altering their selection or weights.
+\end{itemize}
+% =====================================================================
+% Motivation
+% =====================================================================
+\section{Motivation}
+\label{sec:motivation}
+\paragraph{Stable spans inside representative regions.}
+Region-level sampling answers \emph{what} to simulate. However, even within a chosen region (an SP or a LoopPoint RID), the microarchitectural response (throughput, queueing, MPKI) often remains in the same regime for long stretches. Simulating every instruction in such stretches yields diminishing returns.
+\paragraph{Why not “more SPs/RIDs”?}
+Re-applying the SimPoint method to regions already defined by SPs, or increasing the number of RIDs, can fragment regions but does not target the exact instruction neighborhoods where regime shifts occur. Re-sampling repeatedly pays warmup and still traverses stable spans. In contrast, a \emph{phase-sensitive} latent that is contiguous in instruction order and \emph{anchored} to retire-group observables allows us to concentrate the instruction budget around statistically verifiable transitions.
+\paragraph{Why a contiguous latent anchored to aggregates?}
+On OoO cores, cycles are not attributable to single instructions with precision; throughput materializes at the granularity of \emph{retire groups}. We therefore learn a per-instruction surrogate (\pts) whose \emph{group averages} match a standardized anchor (e.g., IPC per retire group). This sidesteps ill-defined instruction-level timing while preserving aggregate consistency, and it enables principled \cpd\ on a smooth, context-aware signal.
+\paragraph{ML perspective.}
+Training \pts lies at the intersection of (i) \emph{learning from aggregates} (learning from label proportions), where only bag-level statistics are observed; and (ii) \emph{masked imputation} for multi-variate sequences, where contiguity and smoothness are desirable. The constraint “group-average equals anchor” makes the latent statistically identifiable (up to small errors) after standardization, and change points in this latent mark phase transitions suitable for budgeted pruning.
+% =====================================================================
+% Background and Related Work
+% =====================================================================
+\section{Background and Related Work}
+\label{sec:background}
+\subsection{Architectural Region Selection}
+The \textbf{SimPoint method} characterizes fixed-size dynamic regions by Basic Block Vectors (BBVs), clusters BBVs, and selects a small number of representative \emph{simulation points (SPs)} with weights~\cite{simpoint-asplos02,simpoint03,simpoint-howto}. \textbf{SMARTS}~\cite{smarts-isca03} uses statistically sound periodic sampling with warmup and confidence bounds. For multi-threaded workloads, \textbf{LoopPoint}~\cite{looppoint-hpca22} identifies loop-aligned regions and constructs micro-checkpoints, assigning \emph{Region IDs (RIDs)}. These techniques \emph{select} regions but do not modulate instruction density \emph{within} each region.
+\subsection{Statistical and Synthetic Simulation}
+Statistical and synthetic approaches model or regenerate execution from distributions of instruction types, control flow, and memory behavior to shorten runs. While they can be fast, capturing the fine-grained, phase-defining neighborhoods that drive microarchitectural responses (e.g., prefetcher and cache interactions) remains challenging.
+\subsection{Learning from Aggregates and Weak Supervision}
+\emph{Learning from label proportions} (LLP) learns instance-level predictors given only bag-level label statistics, often via moment-matching constraints~\cite{yu2014-llp,scott2020-llp}. Related “learning from aggregates” frameworks generalize to regression targets and mean/variance constraints~\cite{law2018-agg,zhang2020-agg}. Our setting treats each \emph{retire group} as a bag and constrains the group-average \pts\ to match a standardized anchor (e.g., group IPC). We also include sequence-aware regularization to promote contiguity, aligning the latent with \cpd.
+\subsection{Sequence Imputation and Masked Modeling}
+Masked modeling for sequences (time-series imputation) trains models to reconstruct missing values while encoding temporal structure. This provides a natural vehicle for learning a smooth latent (\pts) alongside reconstructed features, enabling both aggregate consistency and \cpd\ friendliness.
+\subsection{Offline Change-Point Detection}
+Offline \cpd\ partitions a sequence into segments that are piecewise stationary under a chosen cost (e.g., mean shifts or autoregressive dynamics). \pelt\ offers exact solutions in near-linear time given appropriate penalties~\cite{pelt12,ruptures20}. We adopt an autoregressive segment cost to capture regime shifts in the \pts, which is designed to be contiguous yet responsive to context.
+% =====================================================================
+% Methodology
+% =====================================================================
+\section{Methodology}
+\label{sec:methodology}
+We operate \emph{within} representative regions chosen by SimPoint/LoopPoint. For each region, we produce a contiguous per-instruction \emph{Phase-Transition Signal} (\pts), detect change points in \pts, and preserve compact neighborhoods around those points to match a user-specified reduction budget. Regions’ selection and weights from SimPoint/LoopPoint remain unchanged.
+\subsection{Data, Anchors, and Notation}
+Let the dynamic instruction indices in a region be \(T=\{1,\ldots,|T|\}\). Each instruction \(t\) has a feature vector \(u_t\in\mathbb{R}^{D_f}\) (e.g., PC, opcode, address abstractions, locality summaries). The simulator partitions the stream into \emph{retire groups} \(\{\mathcal{G}_k\}_{k=1}^K\) at reorder-buffer (ROB) emission; the mapping \(g(t)=k\) associates instruction \(t\) with its retire group. We observe a \emph{group-level anchor} \(r_k\) (e.g., instructions-per-cycle for group \(k\)) from a single profiling pass. Anchors are standardized per stream:
+\[
+\tilde{r}_k=\frac{r_k-\bar{r}}{\mathrm{sd}(r)}\,,\quad \bar{r}=\frac{1}{K}\sum_{k=1}^K r_k.
+\]
+\subsection{Phase-Transition Signal (\pts) and Group-Average Matching (\gam)}
+A sequence model \(f_\theta\) (Transformer backbone or any strong imputer) emits a scalar \(\pts\) and reconstructed features:
+\[
+s_t,\,\tilde{u}_t \;=\; f_\theta\!\big(\{u_\tau\}_{\tau\in\mathcal{W}(t)},\,\mathrm{PE}(t)\big),
+\]
+where \(\mathcal{W}(t)\) is a local context and \(\mathrm{PE}(t)\) positional encoding. The \emph{group-average matching} (\gam) constraint enforces aggregate consistency:
+\begin{equation}
+\mu_k(s)\triangleq\frac{1}{|\mathcal{G}_k|}\sum_{t\in\mathcal{G}_k}s_t\;\approx\;\tilde{r}_k.
+\label{eq:group-avg}
+\end{equation}
+Intuitively, \(s_t\) is \emph{not} “instruction-level IPC”; instead, it is a contiguous surrogate whose retire-group means match standardized throughput.
+\subsection{Weakly Supervised Objective with Imputation}
+We train with three terms:
+\begin{itemize}[leftmargin=*,nosep]
+  \item \textbf{Feature reconstruction} on observed entries:
+  \(
+  \mathcal{L}_{\mathrm{FR}}
+  =\frac{\sum_{t,d}M_t^{(d)}\,\ell_d(\tilde{u}_t^{(d)},u_t^{(d)})}{\sum_{t,d}M_t^{(d)}}
+  \),
+  where \(M_t^{(d)}\) indicates visibility and \(\ell_d\) is MAE/CE.
+  \item \textbf{Masked imputation} on randomly masked entries:
+  \(
+  \mathcal{L}_{\mathrm{MI}}
+  =\frac{\sum_{t,d}I_t^{(d)}\,\ell_d(\tilde{u}_t^{(d)},u_t^{(d)})}{\sum_{t,d}I_t^{(d)}}
+  \),
+  with \(I_t^{(d)}\) the artificial mask.
+  \item \textbf{Aggregate consistency} via Huber loss on retire-group means:
+  \begin{equation}
+  \mathcal{L}_{\mathrm{AC}}
+  =\frac{1}{|T|}\sum_{k=1}^K |\mathcal{G}_k|\,\rho_\delta\!\big(\mu_k(s)-\tilde{r}_k\big).
+  \label{eq:ac}
+  \end{equation}
+\end{itemize}
+To encourage \pts\ contiguity (for \cpd) and resolve affine ambiguity, we add:
+\begin{align}
+\mathcal{L}_{\mathrm{TV}} &=
+\frac{1}{|T|-1}\sum_{t=2}^{|T|} |s_t-s_{t-1}|,
+\\
+\mathcal{L}_{\mathrm{NORM}} &=
+\big(\bar{s}\big)^2+\big(\Var(s)-1\big)^2,\quad
+\bar{s}=\tfrac{1}{|T|}\sum_{t=1}^{|T|} s_t.
+\end{align}
+The full loss is
+\begin{equation}
+\mathcal{L}
+=\mathcal{L}_{\mathrm{FR}}
++\lambda\,\mathcal{L}_{\mathrm{MI}}
++\gamma\,\mathcal{L}_{\mathrm{AC}}
++\eta\,\mathcal{L}_{\mathrm{TV}}
++\xi\,\mathcal{L}_{\mathrm{NORM}}.
+\label{eq:full}
+\end{equation}
+We use mini-batches of overlapping tiles with per-group weights proportional to in-batch counts to preserve the per-instruction normalization in \eqref{eq:ac}. At inference time, tiles are blended in overlaps.
+\subsection{Affine Identifiability under Standardized Anchors}
+\label{subsec:identifiability}
+\begin{proposition}[Affine identifiability under standardized anchors; trimmed]
+Assume anchors \(\{\tilde{r}_k\}\) are standardized per stream and that training enforces \(\bar{s}\approx 0\) and \(\Var(s)\approx 1\). Under a strictly convex loss near zero in \eqref{eq:ac}, any affine transform \(s'_t=a s_t+b\) that approximately minimizes \(\mathcal{L}_{\mathrm{AC}}\) must satisfy \(a\approx 1\), \(b\approx 0\).
+\end{proposition}
+\noindent\emph{Sketch.} Retire-group averaging yields \(\mu_k(s')=a\mu_k(s)+b\). Minimizing \(\sum_k|\mathcal{G}_k|\rho_\delta(\mu_k(s')-\tilde{r}_k)\) over \((a,b)\) with moment constraints (\(\bar{s}=0,\,\Var(s)=1\)) gives normal equations whose unique solution is \(a=1,b=0\) (up to small optimization error), provided \(\mathrm{Cov}(\mu(s),\tilde{r})>0\).
+\subsection{Change-Point Detection on \pts}
+\label{subsec:cpd}
+We segment \(s_{1:|T|}\) with \pelt~\cite{pelt12} using an \emph{autoregressive} segment cost of order \(p\) and a BIC-style penalty \(\beta=\alpha\,(p{+}1)\log n\) for tile length \(n\). Sweeping a small grid of \(\alpha\) values yields candidate boundary sets \(\{\mathcal{C}_j\}\). For each \(\mathcal{C}_j\), we apply the budgeted windowing step below; we select the segmentation whose preserved-length is closest to the target (ties broken by fewer segments). This avoids manual penalty tuning while preserving \pelt’s exactness per \(\beta\).
+\subsection{Budgeted Windowing around Detected Boundaries}
+Given change points \(\mathcal{C}\subset\{1,\ldots,|T|\}\), we preserve asymmetric windows around each boundary and prune the rest to match target reduction \(r\in(0,1)\). Windows expand or shrink via binary search until the total preserved instructions meet the desired budget. Overlaps are merged to avoid duplication.
+\begin{algorithm}[t]
+\caption{Adaptive Windowing for Budget-Matched Preservation}
+\label{alg:adaptive}
+\small
+\begin{algorithmic}[1]
+\Require Change points \(\mathcal{C}\), total length \(|T|\), target reduction \(r\), tolerance \(\epsilon\)
+\State \(D\gets \lfloor |T|\,(1-r)\rfloor\); \(W_{\min}\gets 1\); \(W_{\max}\gets |T|\); \(\mathcal{M}^\star\gets\varnothing\); \(P^\star\gets 0\)
+\Function{MakeWindow}{$c,W$}
+  \State \(\Delta_L\gets\lfloor(W-1)/2\rfloor\), \(\Delta_R\gets W-1-\Delta_L\)
+  \State \(s\gets\max(1,c-\Delta_L)\); \(e\gets\min(|T|,c+\Delta_R)\)
+  \State \Return \([s,e]\)
+\EndFunction
+\While{\(W_{\min}\le W_{\max}\)}
+  \State \(W\gets\lfloor(W_{\min}+W_{\max})/2\rfloor\)
+  \State \(\mathcal{R}\gets \{\textsc{MakeWindow}(c,W):c\in\mathcal{C}\}\); \(\mathcal{M}\gets \textsc{MergeOverlaps}(\mathcal{R})\)
+  \State \(P\gets\sum_{[s,e]\in\mathcal{M}}(e-s+1)\)
+  \If{\(|P-D|<|P^\star-D|\)} \(\mathcal{M}^\star\gets\mathcal{M};\ P^\star\gets P\) \EndIf
+  \If{\(|P-D|\le D\epsilon\)} \Return \(\mathcal{M}\) \EndIf
+  \If{\(P<D\)} \(W_{\min}\gets W+1\) \Else \(W_{\max}\gets W-1\) \EndIf
+\EndWhile
+\State \Return \(\mathcal{M}^\star\)
+\end{algorithmic}
+\end{algorithm}
+\subsection{Learning-Free Surrogate (\texorpdfstring{$\beta$}{beta})}
+\label{subsec:beta}
+When training is unavailable, we construct a contiguous heuristic surrogate:
+\begin{equation}
+B_t=\alpha_1\,\ln(1+\mathrm{RD}_t)\;+\;\alpha_2\,|\Delta\mathrm{PC}_t|\;+\;\alpha_3\,|\Delta r_{g(t)}|,
+\end{equation}
+where \(\mathrm{RD}_t\) is reuse distance, \(\Delta \mathrm{PC}_t\) encodes control-flow change, and \(\Delta r_k=r_k-r_{k-1}\) is the adjacent \emph{retire-group} anchor gradient broadcast to all instructions in group \(k\). We use \((\alpha_1,\alpha_2,\alpha_3)=(0.5,0.3,0.2)\). \cpd\ and Algorithm~\ref{alg:adaptive} apply unchanged to \(B_t\); when retire-group anchors are available, the \(|\Delta r_{g(t)}|\) term \emph{is} computed from those anchors.
+\subsection{Integration with SimPoint/LoopPoint}
+Our pipeline composes \emph{inside} regions selected by SimPoint/LoopPoint:
+\begin{enumerate}[leftmargin=*,nosep]
+  \item Upstream selection and weights (SPs/RIDs) remain unchanged.
+  \item For each region, we run profiling once to extract features and anchors \(r_k\).
+  \item We compute \pts\ (or \(B_t\)), perform \cpd, and apply budgeted windowing to obtain a keep-list.
+  \item Per-region kept slices are concatenated; upstream weights are used as-is for any subsequent aggregation.
+\end{enumerate}
+This separation avoids the common confusion between the \emph{SimPoint method} and its outputs (\emph{SPs}). We never “re-run SimPoint”; we only prune \emph{within} the already-selected regions.
+\subsection{Implementation Notes}
+\textbf{Backbone.} Any compact attention-based imputer is suitable; we have used Transformer variants due to their ability to capture long-range, non-Markov structure.
+\textbf{Tiling.} We produce \pts\ in overlapping tiles (e.g., 50\% overlap) and blend linearly. We start with a higher \(\eta\) in \(\mathcal{L}_{\mathrm{TV}}\) and anneal it, which mitigates spurious jaggedness early in training.
+\textbf{CPD.} We use \pelt\ with autoregressive segment cost (orders \(p\in\{2,5,8\}\)) and sweep a short grid of BIC multipliers to avoid hand-tuning.
+\textbf{Anchors at interval granularity.}
+When upstream profiling provides \emph{interval-level} statistics rather than per-\emph{retire-group} data, we treat each interval as a \emph{group} and use its standardized throughput as the anchor; all constraints and \cpd\ steps are unchanged.
+\textbf{Simulator-agnostic.}
+The approach requires only a trace or event stream with (i) instruction-aligned features and (ii) observable aggregate anchors (e.g., IPC per retire group or interval). It composes with standard trace-driven simulators such as \emph{ChampSim} and with checkpoint-driven flows.
+\subsection{Complexity}
+Let \(n=|T|\). \pelt\ runs in expected \(O(n)\) time for a given penalty, and we typically sweep a small constant number of penalties. Windowing is \(O(m\log n)\), where \(m=|\mathcal{C}|\) (dominated by merge-overlaps). The imputer’s inference scales linearly in \(n\) for fixed local context; memory is bounded by tile size.
+% =====================================================================
+% (Optional) Discussion for ML Readers
+% =====================================================================
+\section*{Notes for ML Reviewers (non-normative)}
+While \pts\ is learned by weak supervision, it is grounded in measurable aggregates, and \cpd\ acts as a structure-inducing regularizer at inference time. This separation of concerns—(i) learning a contiguous, aggregate-consistent latent and (ii) exact offline segmentation—yields a transparent and controllable reduction pipeline that complements, rather than replaces, upstream region selection.
+% =====================================================================
+% Bibliography
+% =====================================================================
+\bibliographystyle{IEEEtran}
+% For submission, you may keep keys consistent with prior drafts:
+% (1) SimPoint: simpoint-asplos02, simpoint03, simpoint-howto
+% (2) SMARTS: smarts-isca03
+% (3) LoopPoint: looppoint-hpca22
+% (4) LLP / aggregates: yu2014-llp, scott2020-llp, law2018-agg, zhang2020-agg
+% (5) PELT / ruptures: pelt12, ruptures20
+% Provide your .bib accordingly.
+\bibliography{refs}
+\end{document}
+``` 
+```original.tex
+\documentclass[10pt,journal,compsoc]{IEEEtran}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage{adjustbox}
+\usepackage{tabularx, threeparttable}
+\usepackage{booktabs}
+\usepackage{placeins}
+  \setlength\heavyrulewidth{0.20ex}
+  \setlength\cmidrulewidth{0.10ex}
+  \setlength\lightrulewidth{0.10ex}
+\let\Bbbk\relax
+\usepackage{amssymb}
+\usepackage{fancyvrb}
+\usepackage{soul}
+\usepackage{amsmath,amsfonts}
+\usepackage{algorithmicx}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{textcomp}
+\usepackage{mathtools}
+\usepackage[nocompress]{cite}
+\usepackage{siunitx}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{colortbl}
+\usepackage{color}
+\usepackage{siunitx}
+\sisetup{
+  detect-weight = true,
+  detect-family = true,
+  separate-uncertainty = true,
+  table-number-alignment = center,
+  table-align-text-post = false
+}
+\newcommand{\best}[1]{{\bfseries #1}}
+\usepackage{caption} 
+\captionsetup{font=small}
+\captionsetup{skip=0pt}
+\usepackage[table]{xcolor}  
+% \usepackage[framemethod=tikz]{mdframed} 
+\usepackage{subcaption}
+\usepackage{xcolor} 
+\renewcommand*\thefootnote{\arabic{footnote}}
+\colorlet{shadecolor}{blue!20}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+% \sisetup{
+%     output-decimal-marker = {.},  
+%     table-format=2.3,             
+%     table-space-text-post = \, \%  
+% }
+\definecolor{baselinecolor}{gray}{0.9} 
+\definecolor{highlightcolor}{RGB}{200, 230, 201} 
+\definecolor{revision}{RGB}{187,222,251} 
+\newcommand{\hlc}[2][yellow]{{%
+    \colorlet{foo}{#1}%
+    \sethlcolor{foo}{#2}}%
+}
+% newcommand{\ie}{i.e.,\ }
+\newcommand{\eg}{e.g.,\ }
+\newcommand{\etal}{et al.\ }
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\TV}{\mathrm{TV}}
+% --- Macros ---
+\newcommand{\name}{VitaBeta }
+\newcommand{\pts}{\textsc{PTS} }
+\newcommand{\gam}{\textsc{GAM} }
+\newcommand{\cpd}{\textsc{CPD} }
+\newcommand{\pelt}{\textsc{PELT} }
+% \newcommand{\ie}{i.e.,\xspace}
+% \newcommand{\eg}{e.g.,\xspace}
+% \newcommand{\etal}{et~al.\xspace}
+% To avoid symbol collisions
+\newcommand{\parorder}{p_{\text{AR}}} % AR order
+\newcommand{\penBIC}{\beta_{\text{cpd}}} % PELT penalty (BIC-style)
+\newcommand{\budget}{B} % preserved-instruction budget
+\newcommand{\tb}[1]{\textbf{#1}}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{Todo:} #1}}
+\newcommand{\hd}[2]{\textcolor[rgb]{1.0,0.0,0.0}{hd:\st{#1} {#2}}}
+\newcommand{\MS}[1]{\textcolor{teal}{\textbf{MS:} #1}}
+% \sethlcolor{revision!40}
+% \soulregister\cite1
+% % You might also need to register other commands you use inside \hl
+% \soulregister\emph1
+% \soulregister\textit1
+% \soulregister\textbf1
+% ---------------------------- Document Starts ---------------------------------
+\begin{document}
+\title{Learning Phase-Transition Signals with Group-Average Matching for Fine-Grained Trace Pruning}
+\author{Chengao~Shi,
+        Zhenguo~Liu,~\IEEEmembership{Student Member,~IEEE,}
+        Chen~Ding,~\IEEEmembership{Member,~IEEE,}
+        and~Jiang~Xu,~\IEEEmembership{Member,~IEEE}%
+\IEEEcompsocitemizethanks{
+    \IEEEcompsocthanksitem Chengao Shi is with the Department of Electronic and Computer Engineering, The Hong Kong University of Science and Technology. E-mail: \{cshiai\}@connect.ust.hk.
+    \IEEEcompsocthanksitem Zhenguo Liu and Jiang Xu are with Microelectronics Thrust, The Hong Kong University of Science and Technology (Guangzhou). E-mail: \{zliu094, jiang.xu\}@hkust-gz.edu.cn.
+    \IEEEcompsocthanksitem Chen Ding is with the Department of Computer Science, University of Rochester. E-mail: cding@cs.rochester.edu.}%
+}
+\markboth{IEEE Transactions on Parallel and Distributed Systems,~Vol.~xx, No.~xx, Month~Year}%
+{VitaBeta: Transformer-Guided Trace Reduction for Architectural Simulation}
+\IEEEtitleabstractindextext{%
+\begin{abstract}
+Trace-driven simulation is central to architectural design space exploration, yet simulating long traces on detailed out-of-order (OoO) cores is increasingly expensive. We present \emph{\name}, a trace-reduction framework that accelerates simulation by preserving short, high-fidelity instruction neighborhoods around behavioral transitions, while pruning microarchitecturally stable spans.
+\name makes a deliberate modeling choice: it learns a contiguous, per-instruction \emph{Phase-Transition Surrogates}  (\pts) whose \emph{group averages} in terms of ROB buffer retirement are constrained to match a \emph{group-level throughput target} (''anchor signal''), \eg instructions-per-cycle (IPC) measured per ROB retire group. We train a Transformer using a \emph{group-average matching (GAM) loss}: the mean \pts within each observed retire group equals the standardized group throughput. Robust change-point detection (\cpd) on \pts (exact \pelt with autoregressive segment cost) yields boundaries that guide which neighborhoods to keep and which spans to prune.
+\name composes with SimPoint and LoopPoint and supports application-specific training as well as deployment with pre-trained models. Using ChamPTSm on SPEC CPU2006/2017, GAP, and ten server workloads, \name achieves up to $10{\times}$ trace reduction with mean errors of 5.47\% (IPC), 4.01\% (cache miss), and 2.97\% (cache latency), and delivers a $9.23{\times}$ end-to-end speedup over plain SimPoint when using a pre-trained Transformer. Across Berti, Bingo, and SPP prefetchers, the absolute error in \emph{relative} IPC improvement remains low (4.05\% at $4{\times}$ and 5.79\% at $10{\times}$ reduction), preserving prefetcher ranking.
+On multi-core applications, we evaluate \name in gem5 full-system mode on seven NAS Parallel Benchmarks. Starting from LoopPoint checkpoints, \name yields an additional $5.6{\times}$ speedup while maintaining IPC, cache-miss, and cache-latency errors of 9.6\%, 16.3\%, and 8.3\%, respectively, relative to unsampled detailed simulation. These results indicate that a learned, aggregate-anchored, phase-transition surrogate is an effective and principled driver for fine-grained trace pruning.
+\end{abstract}
+\begin{IEEEkeywords}
+Trace-based simulation, workload characterization, simulation speedup, multicore systems, Transformers
+\end{IEEEkeywords}
+}
+\maketitle
+ 
+\section{Introduction}\label{sec:intro}
+Cycle-accurate simulation remains the de facto instrument for microarchitectural design-space exploration, but faithfully executing billions of dynamic instructions on detailed out-of-order (OoO) cores is prohibitively slow. Region-level sampling—e.g., \emph{SimPoint}~\cite{simpoint-asplos02,simpoint03,simpoint-howto} and \emph{LoopPoint}~\cite{looppoint-hpca22}—ameliorates the cost by selecting representative macroscopic regions. Yet, even inside those regions, we routinely observe long microarchitecturally \emph{stable spans} whose local dynamics have little incremental influence on end metrics (IPC, cache misses/latency). Re-sampling those regions again (e.g., more SimPoints, more LoopPoint RIDs) faces diminishing returns because warmup dominates and stable spans persist.
+We accelerate detailed simulation by selectively preserving short neighborhoods around \emph{critical transitions}—points where the microarchitectural response regime changes—and \emph{pruning} intervening \emph{stable spans}. Intuitively, we retain the program behavior (cumulative performance metrics) at a fraction of the instruction count.
+% \textbf{What is a critical transition?} 
+We define a \emph{critical transition} as a boundary in the dynamic instruction stream where the conditional distribution of microarchitectural observables (e.g., group-level throughput, queue occupancies, MPKI, branch confidence) exhibits an abrupt change. Formally, let the trace be partitioned into retire groups $\{\mathcal{G}_k\}$ emitted from the ROB buffer with a standardized anchor signal $r_k$ (e.g., IPC per ROB group). Let $s_{1:|T|}$ be a contiguous, per-instruction \emph{Phase-Transition Signal} (PTS). A point $t$ is a transition if it is a candidate boundary in a low-order autoregressive segmentation of $s_{1:|T|}$ that minimizes the sum of within-segment prediction errors plus a BIC-style penalty; equivalently, $t$ is where either the mean or short-lag dependence of $s$ changes. The \emph{criticality} of $t$ scales with the magnitude of the modeled change (jump or regime shift) and its downstream effect on end metrics when pruned.
+\textbf{Solution overview.} \name learns a contiguous, per-instruction \pts from an initial simulation pass and then applies exact \cpd (Change Point Detection) to locate transitions. The \pts is trained with a \emph{group-average matching} (\gam) objective: the \emph{mean} \pts over each retire group equals the group’s standardized throughput, i.e., IPC. Given detected change points, \name preserves short, asymmetric windows around them and prunes the rest to match a user-specified reduction target. The resulting keep-list composes \emph{inside} SimPoint/LoopPoint traces without altering their selection or weights.
+\textbf{Why use Transformers?} Our data are multi-variate sequences aligned to dynamic instruction order: static/dynamic features per instruction, retire-group IDs, and group-level anchors $\{r_k\}$ (e.g., IPC per group). This is a long, structured time series with variable-length dependencies (e.g., memory strides, dependency chains, bursty MPKI). A compact Transformer is a natural fit: it captures long-range, non-Markov dependencies, supports masking-based self-supervision, and emits a smooth latent (PTS whose group means can be constrained to match anchors. We regularize \pts with total-variation and moment penalties to ensure contiguity and CPD-friendliness.
+ 
+\section{Preliminary Study}
+Sampling frameworks (SimPoint, LoopPoint) answer \emph{what} to simulate. VitaBeta is complementary: given a representative trace or checkpoint, \emph{how} can we simulate faster by pruning microarchitecturally redundant instructions while maintaining fidelity?
+\subsection*{Why not just re-apply SimPoint?}
+Region-level resampling selects different minor macroscopic points but still simulates long, internally stable spans and repeatedly pays warmup. Below we provide a case study where we perform SimPoint again on SimPoint traces (Re-SimPoint) to obtain equal trace reduction with \name and compare their performance. Our study shows that, under the same trace reduction, re-applying SimPoint underutilizes the budget (number of instructions after trace pruning) on stable spans and warmup, while \name concentrates simulation where transitions occur, yielding higher speedups at lower error. Conceptually, when budget is tight, spending instructions at phase boundaries buys more fidelity per simulated instruction.
+% \name yields a fine-grained latent that is exquisitely sensitive to microarchitectural shifts. 
+ 
+\begin{figure}[!htbp]
+    \centering
+    \setlength{\belowcaptionskip}{-10pt}
+    \captionsetup{skip=0pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \includegraphics[width=0.99\linewidth]{images/resimpoint.pdf}
+    \caption{Re-SimPoint vs.\ SimPoint+\name\ on GAP Benchmark Suite (single-core). At equal reduction rates (2$\times$, 4$\times$, 10$\times$), \name\ attains greater speedups and substantially lower IPC error. Concentrating the instruction budget around phase boundaries buys more fidelity per simulated instruction than re-sampling coarse regions.} 
+%     Please help me come up with a proper caption and discuss it briefly, source data: "labels = ["Single-core\n(2× reduction)", "Single-core\n(4× reduction)", "Single-core\n(10× reduction)"]
+% speedup = {
+%     "Re-SimPoint": [1.5, 3.1, 6.6],
+%     "VitaBeta":         [1.96, 3.92, 9.87],
+% }
+% ipc_err = {
+%     "Re-SimPoint": [5.6, 11.9, 26.4],
+%     "VitaBeta":         [4.2, 6.5, 9.6],
+% }"
+    \label{fig:benchmarks}
+\end{figure}
+\subsection*{Trace Pruning Using Analytical Methods}
+We examined analytical pruning rules in ChamPTSm using SimPoint traces from GAP Benchmark Suite~\cite{beamer2017gapbenchmarksuite}  The following approaches were examined:
+\begin{enumerate}[nosep, leftmargin=*]
+    \item \textbf{Global Stable Loads (GSLs):} As defined in \textit{Constable}\cite{constable}, these are dynamic load instructions that consistently fetch the same value from the same memory location across multiple instances.  
+    \item \textbf{Reuse Distance (RD) Filtering:} This method involves eliminating instructions with small \emph{reuse distances}, a measure of temporal locality that represents the number of unique accesses between two accesses to the same address. The intuition is based on that such instructions access  data that are frequently reused and may have a negligible impact on cache behavior.
+    \item \textbf{Footprint-Based Filtering (Footprint):} This approach removes load/store instructions based on memory footprint thresholds, targeting instructions that contribute minimally to the unique set of memory addresses accessed.
+    \item \textbf{Value-Leaking Addresses (ValLeak):} As discussed in \emph{CLUELESS}\cite{clueless}, such instructions access memory addresses derived from sensitive data values. ValLeak mainly introduce security vulnerabilities by exposing systems to cache side-channel attacks. { The intuition is based on that ValLeak addresses occur in patterns that are not critical for accurate performance estimation, yet they contribute significantly to trace length.}
+\end{enumerate} 
+Table~\ref{tab:comparison_methods} shows none simultaneously achieves substantial speedup and low error across IPC, cache miss, and latency. This motivates a signal that correlates with \emph{phase sensitivity} rather than isolated instruction attributes.
+\begin{table}[htbp!]
+\caption{Performance of Analytical Methods for Trace Reduction (lower is better for errors; higher is better for speedup).}
+\label{tab:comparison_methods}
+\centering
+\setlength{\tabcolsep}{4pt}
+\begin{adjustbox}{max width=1.09\columnwidth}
+\begin{tabular}{l|cccc}
+\toprule
+Metric & GSLs & RD Filtering & Footprint & ValLeak \\
+\midrule
+IPC error (\%)             & 5.88 & \textbf{2.94} & 4.16 & 41.20 \\
+Cache miss error (\%)      & \textbf{0.06} & 2.94 & 7.46 & 13.39 \\
+Cache latency error (\%)   & \textbf{0.41} & 0.68 & 2.42 & 16.00 \\
+Speedup ($\times$)         & 1.06 & 1.08 & 1.06 & \textbf{1.66} \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+\subsection{Key Insights}
+\label{sec:intuition}
+Our objective is to identify phases where a microarchitectural signal exhibits significant change. On modern OoO processors, IPC emerges from retire \emph{groups}, not single instructions; attributing precise cycles to individual instructions is ambiguous and unnecessary. A naive stepwise signal that forward-fills group throughput to every instruction is too coarse for fine-grained CPD and often misses mid-scale changes.
+VitaBeta learns a \emph{per-instruction Phase-Transition Surrogates (PTS)} that (i) preserves aggregate consistency with the observed throughput at the retire-group level and (ii) varies smoothly with local context. CPD on PTS identifies compact, phase-defining neighborhoods. Pruning between those neighborhoods preserves cumulative performance: if the retained segments collectively exhibit throughput similar to the full trace, IPC error remains low while runtime reduces roughly in proportion to the pruned fraction—subject to fixed simulation overheads and warmup costs.
+% Thus, \pts is \emph{not} instruction-level IPC; it is a contiguous per-instruction surrogate whose group averages match the measured throughput.
+\subsection*{Contributions}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{A precise problem formulation.} We formulate \emph{critical transitions} as statistically verifiable change points in a contiguous, aggregate-anchored per-instruction latent (\pts), and show that these points carry disproportionate influence on end metrics.
+  \item \textbf{A principled, orthogonal solution.} We learn \pts with \gam against group-level anchors and apply exact \cpd to retain only short neighborhoods around transitions. This operates \emph{inside} SimPoint/LoopPoint regions and is complementary to their selection mechanisms. 
+  \item \textbf{Accuracy and speed.} On SPEC/GAP/server workloads in ChamPTSm, \name achieves up to $10{\times}$ reduction with modest error growth and a $9.23{\times}$ speedup over plain SimPoint under a pre-trained model, while preserving prefetcher-relative conclusions across Berti, Bingo, and SPP.
+  \item \textbf{Scalability to multi-core.} On gem5 full-system NAS benchmarks, \name compounds LoopPoint’s speedups by $5.6{\times}$ at moderate accuracy loss, demonstrating orthogonality to region-level sampling in multi-threaded settings.
+\end{itemize}
+% \subsection*{Paper Organization}
+% Section~\ref{background} positions VitaBeta relative to sampling, synthetic/statistical simulation, microarchitectural metrics, and learning-based techniques. Section~\ref{sec:methodology} defines PTS, the aggregate-consistency objective, and CPD-driven pruning. Section~\ref{evaluation_sc} evaluates single-core performance, including prefetcher-relative accuracy and overheads. Section~\ref{evaluation_mc} presents multi-core results in gem5 full-system with LoopPoint. Section~\ref{sec:limitations} discusses limitations and threats to validity. Section~\ref{summary} concludes.
+\section{Background and Related Work}\label{background}
+Detailed architectural simulation is indispensable for design space exploration, yet end-to-end cycle accuracy across billions of instructions is prohibitively slow. Prior work to accelerate studies falls into two broad families: profile-driven region selection (\emph{sampling}) and \emph{statistical/synthetic} approaches that model or regenerate execution to shorten runs.  Below we position VitaBeta with respect to each family and to recent learning-based techniques.
+% VitaBeta is orthogonal and complementary: given any representative region or checkpoint selected by a sampling framework, it prunes \emph{within} those regions by preserving compact, phase-defining neighborhoods and removing micro-architecturally stable spans. Below we position VitaBeta with respect to each family and to recent learning-based techniques.
+\subsection{Sampling of Representative Regions}
+SimPoint introduced basic block vectors (BBVs) and clustering to identify representative simulation points that capture large-scale program behavior~\cite{simpoint-asplos02,hamerly-per04,hamerly-jmlr06}. In parallel, SMARTS established statistically rigorous periodic sampling with warmup and confidence bounds for single-threaded applications~\cite{smarts-isca03}. For multi-threaded workloads, several methods leverage structure beyond per-thread BBVs. BarrierPoint identifies inter-barrier regions using synchronization (e.g., OpenMP barriers), and selects representative \emph{barrierpoints} using hybrid code/data signatures (BBVs and LRU stack distance vectors)~\cite{barrierpoint-ispass14}. LoopPoint uses loop-centric profiling to carve repeatable regions, then drives checkpointed sampled simulation in full-system and user modes~\cite{looppoint-hpca22}. Jiang et al.~\cite{jiang2015_taco} proposed a two-level hybrid method that further refines sampling for multi-threaded workloads. More recent work explores online, adaptive sampling (e.g., Pac-Sim) that learns region representativeness at runtime~\cite{pacsimm-taco24}. 
+% All of these techniques answer \emph{what} macroscopic regions to simulate. However, even after a region is selected (e.g., by SimPoint or LoopPoint), long, internally stable spans can remain. VitaBeta is complementary: its per-instruction surrogate signal and change-point detection (CPD) operate \emph{inside} any selected region to retain only short neighborhoods around phase transitions, yielding additional speedups while preserving fidelity.
+These techniques answer \emph{what} macroscopic regions to simulate. \name is complementary: it prunes \emph{within} selected regions using \pts+\cpd to retain only compact neighborhoods around transitions.
+In our experiments, we integrate with both SimPoint and LoopPoint without altering their selection mechanisms.
+\subsection{Statistical and Synthetic Simulation}
+Statistical simulation replaces long detailed runs with synthetic traces or build models from observed distributions of instruction types, dependencies, and memory access patterns, ~\cite{nussbaum-pact01,controlflow-isca04}. \emph{Statistical Flow Graphs}~\cite{wunderlich2003smarts} model control flow and data dependencies to produce representative workloads. {More recent approaches refine this by capturing more complex behaviors}. \emph{Hierarchical Reuse Distance (HRD)}~\cite{hrd} improves cache miss estimation by capturing locality across multiple granularities. Additionally, \emph{Mocktails}~\cite{mocktails} synthesizes spatial-temporal memory patterns for heterogeneous computing devices, thereby bridging the gap between proprietary IP and academic simulation models.  These approaches can be extremely fast, but they often require careful calibration and may under-model local microarchitectural dynamics (e.g., prefetcher  interactions) that matter to modern memory systems.  
+\name differs by never generating synthetic program traces: it keeps real instructions near transitions and prunes stable spans.
+\subsection{Microarchitectural Metrics}
+Locality analysis (e.g., reuse/stack distance) provides powerful summaries of temporal reuse~\cite{mattson1970,benkruskal1975}. Such metrics underpin a broad literature in cache modeling and can help detect regions with limited sensitivity to cache size or replacement. Related to exploiting redundancy, recent microarchitectural proposals identify \emph{likely-stable loads} and eliminate their execution under safety conditions (e.g., Constable)~\cite{constable}. While such mechanisms reduce work during hardware execution, their direct use as pruning rules in trace-driven simulation is brittle: a single instruction-level heuristic rarely correlates with full pipeline and memory-system responses across diverse contexts. 
+% This informs redundancy in existing traces but does not directly drive simulation acceleration across diverse pipelines.
+% Our preliminary study (Section~\ref{sec:intuition}) shows that standalone heuristics (stable-loads, reuse-distance and footprint filters) are either accurate but low-gain or higher-gain but error-prone. VitaBeta instead seeks a \emph{phase-sensitive} driver that is contiguous in instruction order and anchored to measured performance statistics.
+\subsection{Machine Learning for Computer Architecture}
+Machine learning has impacted several architectural problems. Neural and RL-based prefetchers model address sequences or decision policies (e.g., Learning Memory Access Patterns~\cite{hashemi2018learning}, Voyager~\cite{voyager-asplos21} and production-grade designs such as SPP~\cite{spp-micro16}, Bingo~\cite{bingo-hpca19}, and Berti~\cite{berti-micro22}). Separately, Ithemal learns basic-block throughput directly from instructions, outperforming analytical models in throughput estimation~\cite{pmlr-v97-mendis19a}. 
+On the other hand, methods like TransFetch~\cite{transfetch} and Pythia~\cite{pythia} apply attention-based networks and reinforcement learning, respectively, to generate more accurate memory prefetch requests. Recent work~\cite{mine} investigates the use of large language models for memory trace synthesis.
+Our training objective for \pts connects to learning-from-aggregates: LLP and related frameworks learn instance-level predictors from bag-level labels or means~\cite{yu2014-llp,scott2020-llp,law2018-agg,zhang2020-agg}. Here, \emph{retire groups} are bags and group throughput is the regression target.
+ 
+% \subsection{Relation to Concurrent Work and Practical Integration} 
+In summary, VitaBeta advances trace reduction by (i) introducing an aggregate-consistent, contiguous per-instruction surrogate for microarchitectural responsiveness; (ii) using principled CPD to delineate compact phase neighborhoods; and (iii) operating orthogonally to established region-selection methods to harvest additional speedups without sacrificing fidelity.
+% \section{Motivation}
+\section{Methodology}
+\label{sec:methodology}
+\subsection{Design Goals and Problem View}
+VitaBeta performs fine-grained pruning by learning a contiguous, per-instruction latent signal---the \emph{Phase-Transition Surrogates} (PTS)---subject to aggregate constraints. We \emph{anchor} PTS to retire-group quantities exposed by the simulator (e.g., instruction-per-cycle recorded at ROB retirement). PTS is a context-aware signal designed to be (i) consistent with group-level IPC and (ii) piecewise smooth so that change-point detection (CPD) on PTS aligns with microarchitectural phase shifts. 
+% After CPD, we preserve compact neighborhoods around the change points, meeting a target reduction budget.
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.99\linewidth]{images/workflow.pdf}
+    \caption{VitaBeta as multivariate imputation with aggregate constraints: features \(\to\) PTS; CPD on PTS \(\to\) budget-matched pruning via Algorithm~\ref{alg:adaptive_window}.}
+    \label{fig:workflow}
+\end{figure}
+% We call the per–retire-group performance quantity logged by the simulator (e.g., the number of instructions retired in a cycle, standardized within a training stream) the \emph{anchor} $r_k$ for group $k$; instructions that retire together constitute a retire group $\mathcal{G}_k$.
+\textbf{Clarifications.}
+We use \emph{anchor} to denote a measured performance quantity at ROB retire-group granularity (\eg group IPC). Instructions that emit together from ROB buffer form a \emph{retire group}; the anchor value $r_k$ is logged from an initial simulation per group $k$. During training, \pts is constrained so that the \emph{mean} \pts across instructions in group $k$ equals (up to standardization) the anchor $r_k$. 
+Figure~\ref{fig:saits} provides a concrete example illustrating the training process using the data from Table~\ref{tab:example}.
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Example of profiled dataset from an initial simulation  with group \emph{anchors} for training.}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{c|c|c|c|c|c|c}
+\toprule
+\textbf{Index (\(t\))} & \textbf{PC} & \textbf{Address} & \textbf{Opcode} & \textbf{RD} & \textbf{Group ID} & \textbf{Anchor \(r_{g(t)}\)} \\
+\midrule
+1 & 0x0018 & 16  & 2 & $\infty$ & 17 & 0.132 \\
+2 & 0x0040 & 32  & 0 & 2        & 18 & 0.425 \\
+3 & 0x0044 & 8   & 0 & 3        & 19 & 0.345 \\
+4 & 0x004C & 64  & 1 & 4        & 19 & 0.345 \\
+5 & 0x0050 & 1   & 2 & $\infty$ & 19 & 0.345 \\
+\bottomrule
+\end{tabular}}
+\label{tab:example}
+\end{table}
+\subsection{Data Model and Anchors}
+Let the dynamic instruction sequence be \(T=\{1,\ldots,|T|\}\). Each instruction \(t\in T\) has a feature vector \(u_t\in\mathbb{R}^{D_f}\) (PC, opcode, address abstractions, locality summaries, etc.). The trace is partitioned into retire groups \(\{\mathcal{G}_k\}_{k=1}^{K}\), and we observe an anchor \(r_k\) per group (e.g., group throughput). Let \(g(t)=k\) map instruction \(t\) to its group.
+A sequence model \(f_\theta\) (Transformer backbone) outputs PTS
+\[
+s_t \;=\; f_\theta\!\Big(\{u_\tau\}_{\tau\in\mathcal{W}(t)},\,\mathrm{PE}(t)\Big),
+\]
+with a local context window \(\mathcal{W}(t)\) and positional encodings \(\mathrm{PE}(\cdot)\). We require \emph{aggregate consistency}:
+\begin{equation}
+\label{eq:agg-consistency}
+\mu_k(s)\;\triangleq\;\frac{1}{|\mathcal{G}_k|}\sum_{t\in\mathcal{G}_k} s_t \;\approx\; \tilde{r}_k,
+\end{equation}
+where anchors are standardized per training stream,
+\[
+\tilde{r}_k=\frac{r_k-\bar{r}}{\mathrm{sd}(r)},\quad \bar{r}=\frac{1}{K}\sum_{k=1}^K r_k.
+\]
+\textbf{Standardization and identifiability.}
+Because \eqref{eq:agg-consistency} is affine-invariant in $s$, we remove shift/scale ambiguity by standardizing anchors per stream and penalizing per-chunk PTS moments (zero mean, unit variance), which makes the anchor consistency \emph{identifiable} up to small optimization error. A one-parameter post-hoc scale \(c\) can be retained for diagnostics but is fixed to \(1\) during training.
+\subsection{Learning as Imputation with Aggregate Constraints}
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.99\linewidth]{images/ort_mit2.pdf}
+\caption{Training schematic: feature masking (FR/MI) for PTS prediction.  }
+\label{fig:saits}
+\end{figure*}
+\label{subsec:learning}
+We train \(f_\theta\) to (i) reconstruct visible features, (ii) impute artificially masked features, and (iii) produce a PTS that satisfies group-level consistency while remaining CPD-friendly.
+\textbf{Masking.}
+Let \(B_t^{(d)}\in\{0,1\}\) indicate whether feature \(d\) of \(u_t\) is originally observed, \(I_t^{(d)}\in\{0,1\}\) whether we \emph{artificially} mask it, and \(M_t^{(d)}=B_t^{(d)}(1-I_t^{(d)})\) be entries visible to the model. The model outputs reconstructed features \(\tilde{u}_t\) and PTS \(s_t\).
+\textbf{Feature reconstruction (FR).}
+\begin{equation}
+\label{eq:fr}
+\mathcal{L}_{\mathrm{FR}}
+=\frac{\sum_{t,d}M_t^{(d)}\,\ell_d\!\big(\tilde{u}_t^{(d)},u_t^{(d)}\big)}{\sum_{t,d}M_t^{(d)}},
+\end{equation}
+with \(\ell_d\) MAE for numeric and CE for categorical dimensions.
+\textbf{Masked imputation (MI).}
+\begin{equation}
+\label{eq:mi}
+\mathcal{L}_{\mathrm{MI}}
+=\frac{\sum_{t,d}I_t^{(d)}\,\ell_d\!\big(\tilde{u}_t^{(d)},u_t^{(d)}\big)}{\sum_{t,d}I_t^{(d)}}.
+\end{equation}
+\textbf{Aggregate consistency (AC).}
+We penalize discrepancies between group-mean PTS and standardized anchors using Huber loss \(\rho_\delta\):
+\begin{equation}
+\label{eq:ac}
+\mathcal{L}_{\mathrm{AC}}
+=\frac{1}{|T|}\sum_{k=1}^K |\mathcal{G}_k|\;
+\rho_\delta\!\Big(\mu_k(s)-\tilde{r}_k\Big).
+\end{equation}
+In mini-batch training, replace \(\mathcal{G}_k\) by \(\mathcal{H}_k=\mathcal{G}_k\cap\mathcal{B}\) and weight by \(|\mathcal{H}_k|\), which preserves the per-instruction normalization.
+\textbf{Contiguity and normalization.}
+We encourage a CPD-friendly contiguous latent with total variation and moment penalties:
+\begin{align}
+\label{eq:tv}
+\mathcal{L}_{\mathrm{TV}}&=\frac{1}{|T|-1}\sum_{t=2}^{|T|} |s_t-s_{t-1}|,\\
+\label{eq:norm}
+\mathcal{L}_{\mathrm{NORM}}&=\big(\bar{s}\big)^2+\big(\mathrm{Var}(s)-1\big)^2,\quad
+\bar{s}=\tfrac{1}{|T|}\sum_{t=1}^{|T|} s_t.
+\end{align}
+\textbf{Overall objective.}
+\begin{equation}
+\label{eq:total}
+\mathcal{L}=\mathcal{L}_{\mathrm{FR}}+\lambda\,\mathcal{L}_{\mathrm{MI}}+\gamma\,\mathcal{L}_{\mathrm{AC}}+\eta\,\mathcal{L}_{\mathrm{TV}}+\xi\,\mathcal{L}_{\mathrm{NORM}},
+\end{equation}
+with \(\lambda{=}1\), \(\gamma{=}1\), and \((\eta,\xi)\) tuned on held‑out traces. We instantiate \(f_\theta\) with compact attention-based imputers; any backbone that yields a contiguous latent works.
+\textbf{Optional scale calibration.}
+If desired, estimate a single scalar \(c\) after training by
+\[
+c^\star=\frac{\sum_k |\mathcal{G}_k|\,\tilde{r}_k\,\mu_k(s)}{\sum_k |\mathcal{G}_k|\,\tilde{r}_k^2},
+\]
+and keep it fixed at inference.
+\textbf{Affine identifiability (do we really need this?)}
+With standardized anchors \(\{\tilde{r}_k\}\) and \(\mathcal{L}_{\mathrm{NORM}}\) enforcing \(\bar{s}\!\approx\!0\), \(\mathrm{Var}(s)\!\approx\!1\), the minimizer of \(\mathcal{L}_{\mathrm{AC}}\) is invariant only to the identity affine map: any \(s'_t=a s_t+b\) that (approximately) minimizes \(\mathcal{L}_{\mathrm{AC}}\) must satisfy \(a\!\approx\!1\), \(b\!\approx\!0\) (under strictly convex loss near 0 and \(\mathrm{Cov}(\mu(s),\tilde{r})>0\)). \emph{Sketch.} Group-averaging yields \(\mu_k(s')=a\mu_k(s)+b\). Minimizing \(\sum_k |\mathcal{G}_k|\rho\big(\mu_k(s')-\tilde{r}_k\big)\) over \((a,b)\) with the stated moment constraints gives normal equations whose unique solution is \(a{=}1\), \(b{=}0\). 
+\subsection{PTS Inference at Scale}
+Training uses overlapping chunks to control memory; inference concatenates chunkwise PTS with overlap blending. We start with a higher \(\eta\) in \eqref{eq:tv} (to avoid spurious jaggedness) and anneal \(\eta\) so that PTS tightens around genuine transitions near convergence.
+\subsection{Change-Point Detection (CPD) on PTS}
+\label{subsec:cpd}
+We segment \(s_{1:|T|}\) with PELT (Pruned Exact Linear Time) using an \emph{autoregressive} segment cost (AR order \(p\)) from \texttt{ruptures}. We use a single class of \emph{BIC-style} penalties and avoid manual tuning by sweeping a small grid of multipliers:
+\[
+\beta_j \;=\; \alpha_j\,(p{+}1)\,\log n, \qquad \alpha_j \in \mathcal{A},
+\]
+where \(n\) is the length of the PTS tile and \(\mathcal{A}\) is a short list (e.g., 8–16 values). For each \(\beta_j\), we run PELT once to obtain change points \(\mathcal{C}_j\). After windowing (next subsection), we select the segmentation whose preserved-instruction count \(P_j\) is closest to the target budget \(D=\lfloor|T|(1-r)\rfloor\) (ties broken by smaller \(P_j\) and fewer segments). This "range over BIC‑style penalties" eliminates manual tuning while retaining PELT’s exactness per \(\beta_j\). For very long traces, we apply CPD in overlapping tiles and deduplicate boundaries near tile edges.
+\subsection{Adaptive Instruction Interval Calculation}
+\label{instr_removal}
+Given the chosen change points \(\mathcal{C}\), we preserve asymmetric windows around them and prune the rest to match a target reduction \(r\). We adopt the following routine.
+\begin{algorithm}[!htbp]
+\small
+\setlength{\textfloatsep}{4pt}
+\caption{Adaptive Instruction Interval Calculation with Asymmetric Adjustment}
+\label{alg:adaptive_window}
+\begin{algorithmic}[1]
+\Require Change points \(\mathcal{C}\subseteq\{1,\ldots,|T|\}\), total instructions \(|T|\), target reduction rate \(r\in(0,1)\), tolerance \(\epsilon\in(0,1)\)
+\Ensure Preserved instruction intervals \(\mathcal{M}\)
+\State \(D \gets \lfloor |T| \times (1 - r) \rfloor\) \Comment{Desired number of instructions}
+\State \(W_{\min} \gets 1\); \(W_{\max} \gets |T|\); \(\mathcal{M}^\star \gets \varnothing\); \(P^\star \gets 0\)
+\Function{MakeWindow}{$c,W$}
+  \State \(\Delta_L \gets \left\lfloor \frac{W-1}{2} \right\rfloor\), \(\Delta_R \gets W-1-\Delta_L\)
+  \State \(s \gets c - \Delta_L\), \(e \gets c + \Delta_R\)
+  \If{\(s < 1\)} \Comment{Shift right if left boundary exceeded}
+    \State \(e \gets \min(|T|, e + (1 - s))\); \(s \gets 1\)
+  \EndIf
+  \If{\(e > |T|\)} \Comment{Shift left if right boundary exceeded}
+    \State \(s \gets \max(1, s - (e - |T|))\); \(e \gets |T|\)
+  \EndIf
+  \State \Return \([s,e]\)
+\EndFunction
+\While{\(W_{\min} \leq W_{\max}\)}
+    \State \(W \gets \left\lfloor \frac{W_{\min} + W_{\max}}{2} \right\rfloor\)
+    \State Initialize empty list \(\mathcal{R}\)
+    \For{each \(c \in \mathcal{C}\)} 
+        \State Add interval  {MakeWindow}$(c,W)$ to \(\mathcal{R}\)
+    \EndFor
+    \State \(\mathcal{M} \gets\) MergeOverlaps\((\mathcal{R})\)
+    \State \(P \gets \sum_{[s,e] \in \mathcal{M}} (e - s + 1)\)
+    \If{\(|P - D| < |P^\star - D|\)} \(\mathcal{M}^\star \gets \mathcal{M}\); \(P^\star \gets P\) \EndIf
+    \If{\(|P - D| \leq D \times \epsilon\)} \Return \(\mathcal{M}\) \EndIf
+    \If{\(P < D\)} \State \(W_{\min} \gets W + 1\) \Else \State \(W_{\max} \gets W - 1\) \EndIf
+\EndWhile
+\State \Return \(\mathcal{M}^\star\) \Comment{Best-effort if tolerance unmet}
+\end{algorithmic}
+\end{algorithm}
+In practice, asymmetricity arises near the boundaries or when change points cluster; the MergeOverlaps step ensures contiguous kept regions without duplication. If desired, one can make \(W\) depend on local PTS jump magnitude or model uncertainty, but we use a global \(W\) for determinism and simplicity.
+\subsection{A Learning-Free Surrogate (Beta Metric)}
+\label{subsec:beta}
+When learning is unavailable, we use a heuristic surrogate that is still contiguous and phase-sensitive:
+\begin{equation}
+\label{eq:beta}
+B_t \;=\; \alpha_1\,\ln\big(1+\mathrm{RD}_t\big)\;+\;\alpha_2\,\big|\Delta\mathrm{PC}_t\big|\;+\;\alpha_3\,\big|\Delta r_{g(t)}\big|,
+\end{equation}
+where \(\mathrm{RD}_t\) is reuse distance, \(\Delta\mathrm{PC}_t\) encodes control-flow change, and \(\Delta r_k=r_k-r_{k-1}\) is the adjacent \emph{group}-anchor gradient, broadcast to instructions in group \(k\). We use \((\alpha_1,\alpha_2,\alpha_3)=(0.5,0.3,0.2)\). CPD and Algorithm~\ref{alg:adaptive_window} apply unchanged to \(B_t\).
+\subsection{Examples of PTS Estimation and Beta Metric}
+\label{sec3.2}
+Figure~\ref{fig:2} (a) compares a naive stepwise anchor signal (forward-filled group IPC) against the Transformer-learned PTS over a 60K-instruction span. The learned PTS smooths within groups while remaining responsive across groups, producing clearer change points and more faithful preserved chunks. Figure~\ref{fig:2}(b) zooms to a 1K-instruction window, where anchor signal (forward-filled IPC) exhibit flat plateaus; the Beta Metric reveals subtle transitions that anchor signal hides. PTS/Beta Metric is a surrogate phase-sensitivity signal anchored to IPC or other measurable aggregates.
+\begin{figure}[!htbp]
+    \centering
+    \captionsetup{skip=3pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \begin{subfigure}[b]{0.99\columnwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/intuition.pdf}
+        \caption{Transformer-learned PTS vs. forward-filled IPC.}
+        \label{fig:ipc_imputation}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.99\columnwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/ipc_change_point_detection.pdf}
+        \caption{Heuristic Beta Metric as a surrogate signal.}
+        \label{fig:beta_approach}
+    \end{subfigure}
+    \caption{(a) Case study on a 60K-instruction window (\emph{BFS} trace). Change points and preserved intervals are marked using Transformer-learned PTS. (b) Case study on a 1K-instruction window (\emph{gcc-13B} trace). Top: forward-filled anchors (flat within groups); Bottom: heuristic Beta metric (contiguous, phase-sensitive). Shaded regions denote preserved chunks.}
+    \label{fig:2}
+\end{figure} 
+\subsection{Sanity Bounds for Pruning Error}
+Suppose CPD partitions \(T\) into segments \(\{\mathcal{S}_j\}\) within which a length-normalized additive performance functional \(F(t)\) varies by at most \(\Delta_j\). If all true regime boundaries lie inside preserved windows and we remove \(N_{\mathrm{pruned}}\) instructions across segments, then
+\[
+\big|\widehat{F}-F\big|\ \le\ \frac{1}{|T|}\sum_j \Delta_j\, |\mathcal{S}_j\setminus\text{kept}|\ \le\ \Delta_{\max}\frac{N_{\mathrm{pruned}}}{|T|}
+% ,\quad \Delta_{\max}=\max_j\Delta_j.
+\]
+Thus, for piecewise-stable behaviors the error scales with the pruned fraction, while preserving transition neighborhoods controls bias.
+\subsection{Implementation Notes}
+\label{subsec:impl}
+\textbf{Backbone and training.} We use attention-based imputation models; the detailed architecture of the model is orthogonal to VitaBeta as long as \eqref{eq:ac}–\eqref{eq:total} are enforced.
+\textbf{Tiling.} PTS is produced in overlapping tiles (50\% overlap) and blended linearly. \textbf{CPD.} We use PELT with AR cost (order \(p\in\{2,5,8\}\)) and a \emph{BIC-style} penalty \(\beta=\alpha (p{+}1)\log n\). We sweep a short grid of \(\alpha\) values per tile and select the segmentation whose post-window preserved length best matches the target---no separate penalty schemes are used. 
+\textbf{Integration.} Within SimPoint/LoopPoint regions, PTS/CPD runs \emph{inside} each region; preserved chunks are concatenated per region and upstream weights remain unchanged.
+ 
+\section{Evaluation on Single-Core Applications} 
+\label{evaluation_sc}
+We evaluate VitaBeta on reduced SimPoint traces versus full SimPoint traces.
+\subsection{Simulation Methodology}
+\label{subsec:expsetup}
+\textbf{Workloads.} We select memory-intensive traces from SPEC CPU2006~\cite{spec2006}, SPEC CPU2017~\cite{spec2017}, GAP~\cite{beamer2017gapbenchmarksuite}, and ten server workloads collected with gem5~\cite{gem52011} in full-system mode and converted to ChamPTSm format~\cite{llbp_workloads}. We use reference inputs for SPEC and real/synthetic inputs for GAP.
+The ten server traces consist of real-world applications: Eight traces from Java benchmark suites: BenchBase \cite{oltp_bench}, Renaissance \cite{java_renaissance}, and DaCapo \cite{java_dacapo}. Two traces capturing web-server activity: Node.js and PHP-FPM.
+% \end{itemize}
+\textbf{Environment.} Simulations use a modified ChamPTSm\cite{chamPTSm}, coupled with Ramulator 2.0\cite{luo2023ramulator20modernmodular} for DRAM modeling. We warm up for 10M instructions and collect stats for the next 500M.
+\textbf{System configuration.} Table~\ref{tab:baseline} lists a modern OoO baseline. Aggregate anchor signals including IPC (training data) are collected in a fast pass without prefetchers (about 29.27\% faster than prefetcher-enabled simulation), then used to train/apply the PTS model.
+\begin{table}[!htbp]
+\centering 
+\caption{Simulation parameters of the baseline system.}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Core} & \begin{tabular}[c]{@{}l@{}}
+Out-of-order, 4\,GHz \\
+8-fetch/decode, 6-dispatch/retire, 512-entry ROB\\
+192-entry LQ, 114-entry SQ, 205-entry scheduler
+\end{tabular} \\
+\hline
+\textbf{Caches} & \begin{tabular}[c]{@{}l@{}}
+L1I: 32 KB, 64 sets, 8-way, 64B lines, 3 cycles \\
+L1D: 48 KB, 64 sets, 12-way, 64B lines, 4 cycles \\
+L2: 512 KB, 1024 sets, 8-way, 64B lines, 9 cycles \\
+LLC: 2 MB, 2048 sets, 16-way, 64B lines, 40 cycles, LRU 
+\end{tabular} \\
+\hline
+\textbf{BP} & Hashed perceptron predictor~\cite{hashed_perceptron} \\
+\hline
+\textbf{DRAM} & \begin{tabular}[c]{@{}l@{}}
+DDR5-3200, Ramulator 2.0 \\
+2 ch, 2 rank/ch, 8 bank groups\\
+4 banks/group, 32-bit channel \\
+tCAS/tRCD/tRP: 24/24/24, tRAS: 52 \\
+Zen4-like mapping
+\end{tabular} \\
+\hline
+\end{tabular}
+\label{tab:baseline} 
+\end{table}
+\textbf{Prefetchers.} We test BERTI~\cite{navarro2022berti}, Bingo~\cite{bingo}, and SPP~\cite{spp}.
+\textbf{Model evaluation.} 
+We consider:
+(i) \emph{pre-trained} PTS models trained on a single representative trace and applied across benchmarks, and
+(ii) \emph{application-specific} models trained on the top-weight SimPoints of each application. Unless stated otherwise, results use an ImputeFormer pre-trained on a 10B-instruction \texttt{bfs-10} trace.
+We retain SimPoint weights unchanged. For each SimPoint, VitaBeta outputs a reduced trace by concatenating preserved chunks; the final result is the weighted sum over SimPoints.
+\subsection{Overhead Analysis}
+\label{subsec:overhead}
+Let $T_{\text{full}}$ be the time to simulate a full trace once, $T_{\text{prof}}$ the one-time simulation pass used to extract features, and $O$ the remaining one-time overheads (model inference or training, plus CPD+pruning). With reduction factor $r$, each pruned simulation takes $T_{\text{full}}/r$, so the per-run saving versus full simulation is $T_{\text{full}}\!\left(1-\frac{1}{r}\right)$. The break-even number of reduced runs that amortizes the one-time costs is
+\begin{equation}
+\label{eq:breakeven}
+n_{\text{break}} \;\ge\; \frac{r\,(T_{\text{prof}} + O)}{T_{\text{full}}(r-1)}.
+\end{equation}
+If the profiling pass can be amortized or reused across a design sweep, set $T_{\text{prof}}\!\approx\!0$; otherwise a conservative choice is $T_{\text{prof}}\!\approx\!T_{\text{full}}$. In our setup, typical $T_{\text{full}}$ ranges from $\sim$2\,h (603.bwaves\_s-2609B) to $\sim$6\,h (605.mcf\_s-1644B). 
+The one-time overhead beyond profiling is $O{=}0.5$\,h for inference with a pre-trained model or $O{\approx}36$\,h for training from scratch, plus $53$\,min for CPD+pruning (measured on NVIDIA RTX~4090 for learning and Intel Xeon Gold~6338 for simulation/pruning), yielding $O{=}1.38$\,h (pre-trained) or $O{=}36.88$\,h (custom training). As a concrete example, with $r{=}8$ and $T_{\text{full}}{=}5$\,h (bc-12), taking $T_{\text{prof}}{=}T_{\text{full}}$ gives
+$n_{\text{break}} \!\ge\! \tfrac{8(5+1.38)}{5\cdot7}\!\approx\!1.46$ (two runs) for the pre-trained case, and
+$n_{\text{break}} \!\ge\! \tfrac{8(5+36.88)}{5\cdot7}\!\approx\!9.57$ (about ten runs) when training from scratch. Hence, a pre-trained model yields net benefit after only a few reduced simulations, whereas custom training pays off when many runs are planned.
+\subsection{Metrics}
+We report the following performance metrics:
+\begin{itemize}[nosep, leftmargin=*]
+    \item \textbf{IPC Error ($E_{\text{IPC}}$)}: The relative error in cumulative IPC between the reduced and full-length trace simulations.
+    \item \textbf{Cache Miss Rate Error ($E_{\text{Cache\_miss}}$)}: The relative error in cache miss rates, averaged across all cache levels.
+    \item \textbf{Cache Access Latency Error ($E_{\text{Cache\_latency}}$)}: The relative error in average cache access {latency (lat.)}.
+    \item \textbf{TLB Miss Rate Error ($E_{\text{TLB\_miss}}$)}: The relative error in miss rates for Translation Lookaside Buffer.
+    \item \textbf{TLB Latency Error ($E_{\text{TLB\_latency}}$):} The relative error in averaged TLB access {latency (lat.)}.
+    \item \textbf{Simulation Speed-up}: The factor by which the simulation time is reduced compared to the original SimPoint trace.
+\end{itemize}
+For prefetchers we also report the error of relative IPC improvement, and errors of prefetch accuracy and coverage.
+\begin{itemize}[nosep, leftmargin=*]
+    \item \textbf{IPC Improvement}: The proportional improvement in IPC when the prefetcher is enabled, relative to a no-prefetcher baseline:
+    \[
+    \text{IPC Improvement} = \frac{\text{IPC}_{\text{with prefetcher}} - \text{IPC}_{\text{no prefetcher}}}{\text{IPC}_{\text{no prefetcher}}}.
+    \]
+    \item \textbf{Prefetch Accuracy}: The ratio of effective (USEFUL) prefetches to the total number of issued prefetches:
+    \[
+    \text{Accuracy} = \frac{\text{USEFUL}}{\text{USEFUL} + \text{USELESS}}.
+    \]
+    \item \textbf{Prefetch Coverage}: The fraction of cache-miss events that are mitigated by effective prefetching, defined as :
+    \[
+    \text{Coverage} = \frac{\text{USEFUL}}{\text{USEFUL} + \text{LOAD\_MISS} + \text{RFO\_MISS}}.
+    \]
+\end{itemize}
+\begin{figure*}[!htbp] 
+    \centering
+    \subfloat[Cumulative IPC error (\%).]{
+        \includegraphics[width=0.325\textwidth]{individual_boxplot_RDR_IPC_mean_error.pdf}
+    }
+    \subfloat[Cache miss error (\%).]{
+        \includegraphics[width=0.325\textwidth]{individual_boxplot_RDR_cache_miss_error.pdf}
+    }
+    \subfloat[Cache latency error (\%).]{
+        \includegraphics[width=0.325\textwidth]{individual_boxplot_RDR_cache_latency_error.pdf}
+    }
+    \caption{Error distributions for $2\times$, $4\times$, and $10\times$ reductions on SPEC2006/2017, GAP, and server workloads using a pre-trained PTS model. Average speedups: $1.9\times$, $3.9\times$, $9.2\times$. \textit{\small Note: Unless stated otherwise, results in the section use an ImputeFormer pre-trained on a 10B-instruction \texttt{bfs-10} trace.}}
+    \label{fig:distribution_perf}
+\end{figure*}
+\subsection{Results}
+\subsubsection*{General Performance}
+Figure~\ref{fig:distribution_perf} shows that about 75\% of traces have IPC error below 5\% at $2\times$ reduction; this increases modestly at $10\times$ while speedups scale sublinearly with the reduction factor due to fixed costs. Outliers are bandwidth-bound kernels (e.g., \texttt{GemsFDTD}, \texttt{bwaves}, \texttt{roms}, \texttt{mcf}) where small misalignment in preserved segments can amplify cache errors; even then, IPC errors generally remain below 17.5\%.
+Overall, the boxplots confirm that VitaBeta maintains traces of their architectural fidelity across diverse application domains, with only a handful of predictable outliers, and that performance gains scale almost proportionally with trace-length reduction.
+\begin{figure}[!htbp]
+    \centering
+    \setlength{\belowcaptionskip}{-10pt}
+    \captionsetup{skip=3pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \includegraphics[width=0.99\linewidth]{images/overall_performance/error_metrics_speedup_benchmark_comparison.pdf}
+    \caption{Benchmark-level performance with a pre-trained PTS model at $2\times$ reduction. Error bars: standard deviation.}
+    \label{fig:benchmarks}
+\end{figure}
+\subsubsection*{Across Benchmark Suites}
+Figure~\ref{fig:benchmarks} shows SPEC2017 attains the lowest cache errors; GAP exhibits higher IPC and TLB-related errors due to irregular memory behavior and large footprints, yet still benefits from reduction.
+\begin{figure*}[!htbp]
+    \centering
+    \captionsetup{skip=3pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \begin{subfigure}[b]{0.325\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/prefetch/rel_abs_difference_vs_trace_reduction_rate.pdf}
+        \caption{Relative IPC improvement error (\%).}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.325\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/prefetch/rel_abs_difference_on_accuracy_vs_trace_reduction_rate.pdf}
+        \caption{Prefetch accuracy error (\%).}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.325\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/prefetch/rel_abs_difference_on_coverage_vs_trace_reduction_rate.pdf}
+        \caption{Prefetch coverage error (\%).}
+    \end{subfigure} 
+    \caption{Relative prefetcher accuracy on pruned traces (pre-trained PTS model), averaged over SPEC2006/2017, GAP, and server workloads. Mean IPC improvements for full-traces: BERTI 20.28\%, Bingo 27.80\%, SPP 34.50\%.}
+    \label{fig:prefetch_perf}
+\end{figure*}
+\begin{figure*}[!htbp] 
+    \centering
+    \captionsetup{skip=3pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \begin{subfigure}[b]{0.325\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/prefetch/rel_abs_difference_vs_benchmark_2X_rdr.pdf}
+        \caption{IPC improvement error at $2\times$.}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.325\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/prefetch/rel_abs_difference_vs_benchmark_4X_rdr.pdf}
+        \caption{IPC improvement error at $4\times$.}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.325\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/prefetch/rel_abs_difference_vs_benchmark_10X_rdr.pdf}
+        \caption{IPC improvement error at $10\times$.}
+    \end{subfigure} 
+    \caption{Prefetcher IPC-improvement errors across benchmark suites (pre-trained PTS model).}
+    \label{fig:prefetch_benchmark}
+\end{figure*}
+\subsubsection*{Relative Prefetcher Performance}
+Figure~\ref{fig:prefetch_perf} shows that the ordering among BERTI, Bingo, and SPP is preserved up to $4\times$ reduction and remains informative at $10\times$ for workloads with larger baseline gains (e.g., GAP). 
+% Prefetch accuracy and coverage errors stay below $\sim$1–1.5\%.
+ At higher reduction rates from (\(8\times\) to \(10\times\)), however, the error can exceed half the difference between the IPC improvements of any two prefetchers and the results may not be reliable. This effect is particularly pronounced for benchmarks with low baseline IPC improvements. For example, Figure~\ref{fig:prefetch_benchmark} shows that server traces, with a baseline improvement of only 7.64$\%$, exhibit relative errors of 1.41\%, 3.17\%, and 3.95\% under \(2\times\), \(4\times\), and \(10\times\) reductions, respectively. In contrast, benchmarks with higher baseline IPC improvements (e.g., GAP with 63.32\%) maintain a robust relative accuracy of prefetchers even at higher reduction rates.
+ 
+Additionally, prefetch accuracy and coverage errors stay below $\sim$1–1.5\% for trace reductions between \(2\times\) and \(10\times\). These metrics are retained very similar   between both sets of runs and help prefetcher designer make the right analysis and conclusions
+\begin{figure*}[!htbp]
+    \centering
+    \captionsetup{skip=3pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \begin{subfigure}[b]{0.33\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{server_2x_performance_comparison.pdf}
+        \caption{$2\times$ reduction.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.33\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{server_4x_performance_comparison.pdf}
+        \caption{$4\times$ reduction.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.33\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{server_10x_performance_comparison.pdf}
+        \caption{$10\times$ reduction.}
+    \end{subfigure}
+ \caption{Performance on server workloads with various prefetchers: metric errors vs. reduction (pre-trained PTS model).}
+    \label{fig:abs_prefetch_perf}
+\end{figure*}
+\subsubsection*{Server Workloads}
+Figure~\ref{fig:abs_prefetch_perf}  summarizes the performance of VitaBeta with 3 different prefetchers  on 10 server workloads. It shows most metrics remain within $\le$10\% error up to $10\times$ reduction, with speedups saturating near $9.4\times$ due to fixed costs. TLB miss errors are higher than SPEC/GAP at aggressive reductions, reflecting large, locality-optimized heaps and GC behavior that make TLB dynamics sensitive to trace pruning.
+\subsubsection*{Branch Prediction Accuracy}
+Because VitaBeta preserves sizable chunks around change points, branch distributions remain close to the originals. At $2\times$ reduction with a pre-trained model, BP accuracy errors remain small (e.g., 0.126\% SPEC2006, 0.117\% SPEC2017, 0.489\% GAP) despite significant instruction pruning in GAP.
+\begin{figure*}[!htbp]  
+    \centering
+    \captionsetup{skip=3pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \includegraphics[width=.99\textwidth]{publication_subplots_hatched_bars.pdf}
+    \caption{Different Backbone Models for generating PTS: Beta heuristics, non-Transformers, and Transformer variants at $4\times$ reduction (no prefetchers enabled). Error bars: standard deviation.}
+    \label{fig:model_perf}
+\end{figure*}
+ 
+\subsection{Sensitivity Analysis}
+\subsubsection*{Model Choices}
+Figure~\ref{fig:model_perf} compares Various PTS backbones. Transformer variants (SAITS/ImputeFormer) outperform non-Transformers (TEFN~\cite{TEFN}, ModernTCN~\cite{moderntcn}) and the heuristic Beta Metric, especially at higher reductions. Application-specific training offers up to $\sim$10\% additional error reduction over a strong pre-trained model; heavier models (TimesNet, TimeMixer) do not consistently outperform compact Transformers given similar training budgets.
+\subsubsection*{Impact of Training Data}
+Table~\ref{tab:sensitivity_training_onecol} indicates that pre-training on different representative traces yields similar aggregate accuracy; \texttt{gcc-13B} pre-training slightly improves means but increases variance due to its chaotic phase structure~\cite{Shen+:ASPLOS04}. % CITATION NEEDED
+\begin{table}[htbp!]
+  \caption{Different Pre-Training Traces (SPEC2017/2006/GAP), $2\times$ reduction. Prefetcher: BERTI. Values are geometric means in \%. Lower is better except Speedup.}
+  \label{tab:sensitivity_training_onecol}
+  \centering
+  \setlength{\tabcolsep}{2pt}
+  \begin{adjustbox}{max width=1.0\columnwidth}
+  \begin{tabular}{l|rrrrrr}
+  \toprule
+  Training data & ${E}_{\text{IPC}}$  & $E_{\text{cache\_miss}}$  &$E_{\text{cache\_latency}}$  & $E_{\text{TLB\_miss}}$    & $E_{\text{TLB\_latency}}$   & Speedup \\
+  \midrule
+  astar-313B & \textbf{3.224\%} & 2.625\% & \textbf{1.783\%} & 3.655\% & 4.213\% & $1.971\times$ \\
+  bfs-10     & 3.458\% & \textbf{2.373\%} & 1.926\% & 3.283\% & 4.498\% & $1.952\times$ \\
+  gcc-13B    & 3.229\% & 2.456\% & 2.094\% & \textbf{2.787\%} & \textbf{4.190\%} & \textbf{$1.989\times$} \\
+  \bottomrule
+  \end{tabular}
+  \end{adjustbox}
+  \vspace{0.25ex}
+  \\
+  \footnotesize Note: Same ImputeFormer hyperparameters; models are pre-trained on different traces and evaluated across the suites.
+\end{table}
+\subsubsection*{CPD Cost Functions}
+We conduct experiments comparing the {Auto-Regressive ($AR$)} cost function with the {Least Squared Deviation ($L_2$)} cost function. We assess their effectiveness on \textit{TimeMixer} and \textit{TimesNet}, since these two models tend to yield very high variance among all error metrics compared to other Transformer-based models. The $L_2$ cost function is defined as: $$c_{\text{$L_2$}}(y_{t_a:t_b}) = \sum_{t = t_a}^{t_b} \left( y_t - \bar{y}_{t_a:t_b} \right)^2,$$
+where $\bar{y}_{t_a:t_b}$ is the mean of the segment $[t_a, t_b]$. 
+While $AR$ is suitable for time series where current values are influenced by past values, the $L_2$ cost function is effective for detecting shifts in the mean level of the signal\cite{Lavielle2005}.   
+Table~\ref{tab:sensitivity_cpd_onecol} shows TimeMixer prefers AR cost (temporal dependence), while TimesNet prefers $L_2$ (mean shifts). Selecting a CPD cost aligned with the backbone’s inductive bias improves stability.
+\begin{table}[htbp!]
+  \caption{CPD cost functions with different backbones (SPEC2017/2006/GAP), $2\times$ reduction. Prefetcher: BERTI. Values are geometric means in \%. Lower is better except Speedup.}
+  \label{tab:sensitivity_cpd_onecol}
+  \centering
+  \setlength{\tabcolsep}{2pt}
+  \begin{adjustbox}{max width=1.0\columnwidth}
+  \begin{tabular}{l|rrrrrr}
+  \toprule
+  Approach &  $E_{\text{IPC}}$  & $E_{\text{cache\_miss}}$  &$E_{\text{cache\_latency}}$  & $E_{\text{TLB\_miss}}$    & $E_{\text{TLB\_latency}}$   & Speedup\\
+  \midrule
+  \footnotesize TimeMixer + AR-CPD    & \textbf{2.175\%} & \textbf{1.249\%} & \textbf{1.400\%} & \textbf{2.702\%} & \textbf{3.207\%} & $1.959\times$ \\
+  \footnotesize TimeMixer + $L_2$-CPD  & 2.870\% & 1.392\% & 1.419\% & 3.313\% & 4.234\% & \textbf{$2.035\times$} \\
+  \midrule
+  \footnotesize TimesNet + AR-CPD     & 3.514\% & 1.924\% & 2.675\% & 3.217\% & 4.223\% & $1.995\times$ \\
+   \footnotesize TimesNet + $L_2$-CPD     & \textbf{3.027\%} & \textbf{1.789\%} & \textbf{2.356\%} & \textbf{3.495\%} & \textbf{3.720\%} & $1.987\times$ \\
+  \bottomrule
+  \end{tabular}
+  \end{adjustbox}
+  \vspace{0.25ex}
+  \\
+  \footnotesize Note: Each Backbone model share the same hyperparameters; only the CPD cost differs.
+\end{table}
+\section{Evaluation on Multi-Core Applications} 
+\label{evaluation_mc}
+\textbf{Experimental setup.} We follow LoopPoint in gem5 full-system~\cite{LoopPointTutorialHPCA23} on seven NAS Parallel Benchmarks~\cite{npb_benchmark} (Class A~\cite{npb_input_size}, 4 OpenMP threads) with a Skylake-like quad-core (Table~\ref{tab:detailed_board}) baseline configuration.
+\begin{table}[!htbp]
+\centering
+\caption{Configuration of detailed gem5 FS simulation.}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{CPU Model} & Out-of-order, 4\,GHz, SkyLakeCPU (4 cores) \\ 
+\hline
+\textbf{Caches} & \begin{tabular}[c]{@{}l@{}}
+L1I/L1D: 64 KB, 8-way;\; L2: 2 MB, 64-way \\
+Coherence: MESI two-level
+\end{tabular} \\
+\hline
+\textbf{System} & Ubuntu 24.04 (4 CPUs, built with QEMU~\cite{qemu}) \\
+\hline
+\textbf{DRAM} & DDR4\_2400\_16x4, 3GB \\
+\hline
+\end{tabular}
+\label{tab:detailed_board}
+\end{table}
+\vspace{-0.5cm}
+\subsection{LoopPoint Workflow}
+\begin{enumerate}[nosep, leftmargin=*]
+  \item \textbf{Boot Checkpointing.}  
+        We fast-forward a Ubuntu 24.04 image to the shell prompt with a
+        \textit{X86KvmCPU} and save an \emph{after-boot} snapshot.
+        This removes the OS boot path from all subsequent experiments.
+  \item \textbf{Process-map Extraction.}  
+        Restoring the boot image we launch the
+        NPB binary and dump
+        \emph{/proc/\$PID/maps}.  
+        We filter the map to get (i) the application
+        text segment---used later to validate marker PCs—and
+        (ii) ``unsafe'' ranges (OpenMP, {pthread} etc.) that must
+        be \emph{excluded} from BBV collection. 
+  \item \textbf{LoopPoint analysis.}  
+         We enable a \emph{LooppointAnalysis} probe that listens       inside the application’s text range; library addresses found in
+        the previous step are masked out.  
+        Region length  is fixed to 400M instructions.  
+        We record the BBV, global instruction count and loop
+        counters and then reset all statistics. 
+        A typical NPB-A
+        run produces $50$–$90$ regions, which are later clustered using k-means for representative  selection.         For every representative region ID (RID) we derive three
+        markers (warm-up, start, end).
+ 
+  \item \textbf{Checkpoint construction.}  
+        Starting from the boot snapshot,
+        we enable a
+        \textit{PcCountTracker} that listens at
+        \textit{WORKBEGIN}, and dumps a checkpoint whenever a warm-up or
+        start marker fires.  
+        Regions whose warm-up coincides with
+        \textit{WORKBEGIN} are captured automatically, ensuring \emph{one
+        micro-checkpoint (LoopPoint) per RID} and zero redundant state.
+  \item \textbf{Detailed replay.}  
+        We restores each
+        LoopPoint on the detailed core
+        (Tab.~\ref{tab:detailed_board}).  
+        Per-region stats are scaled by the cluster weight and summed;
+        the grand total is compared against an unsampled detailed run.
+\end{enumerate}
+\subsection{Using VitaBeta  for {LoopPoint Refinement}}
+\begin{enumerate}[nosep, leftmargin=*]
+\item \textbf{Generate elastic traces.}  
+For each application profiled by LoopPoint, we load information from the same RID and use a modified \textit{TraceCPU} to  emit an \textit{interleaved trace} similar to Table~\ref{tab:example} from gem5 elastic traces\cite{elastic_trace_gem5} (memory data trace and instruction fetch trace).
+\item \textbf{Offline pruning to generate new checkpoints.}  
+    We then run VitaBeta with a target $4\times$ reduction to retains only the
+      instruction spans around its detected change points. This results in a compact \emph{keep-list}:
+      \(\langle\text{PC},\,\Delta\text{inst}\rangle\) pairs that delimit the surviving slices. Finally, we re-checkpoint in the same way as LoopPoint with the generated \textit{PcCountTracker}. Detailed replay on these checkpoints uses the same core configuration (Table~\ref{tab:detailed_board}).
+\end{enumerate} 
+\begin{figure*}[!htbp] 
+    \centering
+    \includegraphics[width=1.00\textwidth]{lp2.pdf}
+    \caption{Per-benchmark breakdown for LoopPoint+VitaBeta (pre-trained PTS).}
+    \label{fig:lp_vb_breakdown} 
+\end{figure*}
+\begin{figure}[!htbp] 
+    \centering
+    \includegraphics[width=.99\columnwidth]{lp1.pdf}
+    \caption{LoopPoint vs.\ LoopPoint+VitaBeta (against unsampled detailed ground truth).}
+    \label{fig:lp_vb_comparison} 
+\end{figure}
+% \vspace{-0.5cm}
+\subsection{Results}
+We evaluate three configurations:
+\begin{itemize}[nosep, leftmargin=*]
+    \item \textbf{Ground-truth (GT): }  full, unsampled detailed run.
+    \item \textbf{LoopPoint (LP): }  vanilla LoopPoint, average 30 regions.
+    \item \textbf{LP+VB: } VitaBeta-refined LoopPoints ($4\times$ reduction).
+\end{itemize}
+\smallskip\noindent
+We sum per-region statistics weighted by region
+multiplicity and report the GeoMean error of
+\textsc{LP}/\textsc{LP+VB} versus \textsc{GT}.  
+Figure~\ref{fig:lp_vb_comparison} shows that \textsc{LP+VB} multiplies
+LoopPoint’s original $4.3\times$ speed-up to {23.9$\times$}—a $5.6\times$ additional acceleration,while IPC error rises modestly from $3.1\%$ to {9.6\%}.  Cache and DRAM latency errors remain below $10.5\%$ and $17.0\%$,
+respectively.  Although VitaBeta’s pruning is uniformly aggressive, accuracy deteriorates sub-linearly corresponding to the gain in speed-up. Figure~\ref{fig:lp_vb_breakdown} indicates compute-bound workloads
+(\textit{CG}, \textit{EP}) gain the most ($42$–$285\times$ speed-up),
+whereas memory-intensive ones with irregular spatial locality (\textit{MG}, \textit{LU}) incur 
+highest DRAM-latency error.  These high errors are caused by interleaving the multi-threading traces that coincides with page-table walks and conflict-miss bursts. Nevertheless, even for them, the IPC error stays below 20\%, and the simulator still runs an order of magnitude faster than  LoopPoint baseline. 
+These results validate VitaBeta as an \emph{orthogonal}
+complement to region-level sampling in multi-core full-system studies.  
+% \textbf{Discussion.}
+Multi-threaded traces introduce cross-core interference and barrier-aligned patterns. Two practical refinements further reduce error: (i) \emph{co-run PTS}: augment features with shared-LLC MPKI and per-core QPS to align cross-core phases; (ii) \emph{sync-guarded pruning}: inflate preservation windows around barrier and lock/unlock PCs. We applied conservative sync guards in our implementation; richer co-run PTS is left for future work.
+\section{Limitations and Threats to Validity}
+\label{sec:limitations}
+\textbf{Scope of the surrogate.} PTS is a learned surrogate constrained by group-level anchors; if anchors are noisy or biased by the profiling setup (e.g., prefetchers disabled), PTS may inherit these biases. 
+\textbf{Generalization.} Pre-trained models generalize across evaluated suites and three prefetchers, but cross-\emph{microarchitecture} generalization is not guaranteed; re-profiling and light fine-tuning may be required when pipeline widths, cache hierarchies, or memory systems differ substantially. 
+\textbf{Warmup and fixed costs.} Speedups saturate below the nominal reduction due to fixed simulation overheads and warmup; aggressive pruning that shortens preserved regions can increase sensitivity to warmup choices.
+\textbf{CPD hyperparameters.} CPD quality depends on penalty choices and windowing; misconfigured penalties can under- or over-segment. We use a BIC-style penalty and validated defaults empirically.
+\textbf{Multicore synchronization.} For multi-threaded workloads, barriers and lock-intensive regions are sensitive to pruning. We mitigate this with sync guards; more principled co-run PTS features are left for future work.
+\section{Conclusion}
+\label{summary}
+We introduced \emph{VitaBeta}, a Transformer-guided trace reduction framework that learns a \emph{per-instruction Phase-Transition Surrogates} (PTS) under aggregate-consistency constraints. VitaBeta does not assume well-defined instruction-level IPC; instead, it anchors a contiguous surrogate to observed group-level throughput and uses CPD to preserve compact, phase-defining segments.
+On SPEC, GAP, and server workloads, VitaBeta delivers $2$–$4\times$ speedups with $\le$5\% IPC error, and up to $10\times$ reduction with modest error growth, preserving prefetcher-relative conclusions. On multi-core, VitaBeta compounds LoopPoint’s speedups by $5.6\times$ at moderate accuracy loss, demonstrating orthogonality to region-level sampling.
+By decoupling pruning from ill-defined per-instruction cycles and grounding it in an aggregate-consistent surrogate, VitaBeta offers a principled, practical path to faster, faithful architectural simulation.
+% \balance
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+\begin{thebibliography}{99}
+\bibitem{simpoint02}
+T.~Sherwood, E.~Perelman, G.~Hamerly, and B.~Calder, ``Automatically Characterizing Large Scale Program Behavior,'' in \emph{ASPLOS}, 2002.
+\bibitem{simpoint03}
+E.~Perelman, G.~Hamerly, M.~Van~Biesbrouck, T.~Sherwood, and B.~Calder, ``Using SimPoint for Accurate and Efficient Simulation,'' in \emph{ACM SIGMETRICS}, 2003.
+\bibitem{simpoint-howto}
+G.~Hamerly, E.~Perelman, and B.~Calder, ``How to Use SimPoint to Pick Simulation Points,'' \emph{SIGMETRICS PER}, 2004.
+\bibitem{smarts03}
+R.~E. Wunderlich, T.~F. Wenisch, B.~Falsafi, and J.~C. Hoe, ``SMARTS: Accelerating Microarchitecture Simulation via Rigorous Statistical Sampling,'' in \emph{ISCA}, 2003.
+\bibitem{looppoint-hpca22}
+A.~Sabu, H.~Patil, W.~Heirman, and T.~E. Carlson, ``LoopPoint: Checkpoint-driven Sampled Simulation for Multi-threaded Applications,'' in \emph{HPCA}, 2022.
+\bibitem{pacsimm-taco24}
+C.~Liu, A.~Sabu, A.~Chaudhari, Q.~Kang, and T.~E. Carlson, ``Pac-Sim: Simulation of Multi-threaded Workloads using Intelligent, Live Sampling,'' \emph{ACM TACO}, 21(4), 2024.
+\bibitem{mattson70}
+R.~L. Mattson, J.~Gecsei, D.~R. Slutz, and I.~L. Traiger, ``Evaluation Techniques for Storage Hierarchies,'' \emph{IBM Systems Journal}, 9(2), 1970.
+\bibitem{constable-arxiv24}
+R.~Bera \etal, ``Constable: Improving Performance and Power Efficiency by Safely Eliminating Load Instruction Execution,'' arXiv:2406.18786, 2024.
+\bibitem{clueless23}
+X.~Chen, P.~Aimoniotis, and S.~Kaxiras, ``Clueless: A Tool Characterising Values Leaking as Addresses,'' arXiv:2301.10618, 2023.
+\bibitem{pythia21}
+R.~Bera \etal, ``Pythia: A Customizable Hardware Prefetching Framework Using Online Reinforcement Learning,'' arXiv:2109.12021, 2021.
+\bibitem{ithemal19}
+C.~Mendis, A.~Renda, S.~Amarasinghe, and M.~Carbin, ``Ithemal: Accurate, Portable and Fast Basic Block Throughput Estimation Using Deep Neural Networks,'' in \emph{ICML}, 2019.
+\bibitem{yu2014-llp}
+F.~X. Yu \etal, ``On Learning from Label Proportions,'' in \emph{NeurIPS}, 2014.
+\bibitem{scott2020-llp}
+C.~Scott and J.~Zhang, ``Learning from Label Proportions: A Mutual Contamination Framework,'' in \emph{NeurIPS}, 2020.
+\bibitem{law2018-agg}
+H.~C.~L. Law \etal, ``Variational Learning on Aggregate Outputs with Gaussian Processes,'' arXiv:1805.08463, 2018.
+\bibitem{zhang2020-agg}
+Y.~Zhang, N.~Charoenphakdee, Z.~Wu, and M.~Sugiyama, ``Learning from Aggregate Observations,'' arXiv:2004.06316, 2020.
+\bibitem{pelt12}
+R.~Killick, P.~Fearnhead, and I.~A. Eckley, ``Optimal Detection of Changepoints With a Linear Computational Cost,'' \emph{JASA}, 2012.
+\bibitem{pelt11}
+R.~Killick, P.~Fearnhead, and I.~A. Eckley, ``Optimal detection of changepoints with a linear computational cost,'' arXiv:1101.1438, 2011.
+\bibitem{ruptures20}
+C.~Truong, L.~Oudre, and N.~Vayatis, ``Selective Review of Offline Change Point Detection Methods,'' \emph{Signal Processing}, 167:107299, 2020. (Library: \texttt{ruptures})
+\bibitem{berti-micro22}
+A.~Navarro-Torres \etal, ``Berti: An Accurate Local-Delta Data Prefetcher,'' in \emph{MICRO}, 2022.
+\bibitem{bingo-hpca19}
+M.~Bakhshalipour, M.~Shakerinava, P.~Lotfi-Kamran, and H.~Sarbazi-Azad, ``Bingo Spatial Data Prefetcher,'' in \emph{HPCA}, 2019.
+\bibitem{spp-micro16}
+J.~Kim \etal, ``Path Confidence Based Lookahead Prefetching (Signature Path Prefetcher),'' in \emph{MICRO}, 2016.
+\bibitem{gap}
+S.~Beamer, K.~Asanovi\'c, and D.~Patterson, ``The GAP Benchmark Suite,'' arXiv:1508.03619, 2015.
+\bibitem{nas91}
+D.~H. Bailey \etal, ``The NAS Parallel Benchmarks,'' \emph{Int. J. Supercomput. Appl.}, 1991.
+\bibitem{nas-site}
+NASA Advanced Supercomputing (NAS), ``NAS Parallel Benchmarks,'' \url{https://www.nas.nasa.gov/software/npb.html}.
+\bibitem{pin}
+Intel, ``Pin: A Dynamic Binary Instrumentation Tool,'' \url{https://www.intel.com/content/www/us/en/developer/articles/tool/pin-a-dynamic-binary-instrumentation-tool.html}.
+\bibitem{dynamorio}
+DynamoRIO Project, ``DynamoRIO,'' \url{https://dynamorio.org/}.
+\bibitem{chamPTSm-doc}
+ChamPTSm Developers, ``ChamPTSm Documentation,'' \url{https://chamPTSm.github.io/ChamPTSm/master/}.
+\end{thebibliography}
+\end{document}
+```
