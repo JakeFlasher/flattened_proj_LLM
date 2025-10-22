@@ -1,0 +1,724 @@
+```proposal1.tex
+ 
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage[margin=0.4in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{adjustbox}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+\title{Co-Optimizing Hybrid-Bond and TSV Placement for Power Integrity in 3D-ICs: A Pre-RTL Framework for Worst-Case IR-Drop Minimization}
+
+\author{
+\IEEEauthorblockN{Anonymous}
+\IEEEauthorblockA{Affiliation omitted for review}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Delivering clean power in many-layer 3D integrated circuits (3D-ICs) is increasingly limited by on-chip and vertical power delivery impedances. While prior work has optimized C4 pad placement and modeled TSV-based 3D PDNs, modern stacks also rely on fine-pitch Cu--Cu hybrid bonding (HB) between dies. We present (i) a comprehensive literature review spanning pre-RTL PDN models, transient noise and pad optimization, TSV planning, and HB technology; (ii) a mathematical program that jointly places HB pads and power TSVs under physical constraints to minimize worst-case IR drop across multiple power maps; and (iii) a practical, scalable pre-RTL algorithm that exploits adjoint sensitivities and rank-1 updates to greedily select HB/TSV links with provable improvement steps. We specify concrete input files (compatible with VoltSpot-style PDN descriptions) and provide pseudocode. Our framework bridges the gap between the emerging HB-dominant inter-die PDN and the traditional TSV/C4/package path, enabling robust IR-drop targets in heterogeneous 3D stacks. 
+\end{abstract}
+
+\section{Introduction}
+Power integrity---static IR drop and dynamic droop---has become a primary limiter for advanced SoCs and, more acutely, many-layer 3D-ICs. Contemporary architecture-level PDN models (e.g., VoltSpot) demonstrated that accurate pad/PDN modeling materially changes both IR-drop metrics and transient noise conclusions, and that pad resources are scarce and consequential to performance and reliability \cite{ZhangISCA2014,VoltSpot}. Simultaneously, integration advances have shifted the vertical interconnect mix: beyond TSVs and micro-bumps/C4s, fine-pitch Cu--Cu hybrid bonding (HB) now enables face-to-face inter-die power/signal grids with sub-10~$\mu$m pitch in production (e.g., AMD 3D~V-Cache), and research demonstrations near 2~$\mu$m and below \cite{TomsHC33,EVGHB,SonyECTC2025,IEEESpectrumHB}. These denser, lower-$R$/$L$ inter-die links fundamentally change best practices for power delivery, calling for a co-optimization of HB and TSV networks rather than TSV-only planning.
+
+In response, we formulate and solve a \emph{joint} HB/TSV placement problem to minimize worst-case IR drop, subject to pitch/density, KOZ, EM and mechanical constraints, and across multiple per-die power maps. Our approach operates pre-RTL, integrates with VoltSpot-style 3D PDN models, and exposes a reproducible input/output interface.
+
+\paragraph*{Contributions}
+\begin{itemize}[leftmargin=*,nosep]
+  \item A structured literature review spanning: pre-RTL 3D PDN modeling; transient-noise-aware pad optimization (Walking Pads); TSV planning with thermal/leakage coupling; and HB technology, process, resistance, and EM reliability.
+  \item A minimax mathematical program for steady-state IR-drop with decision variables over HB and TSV links, explicitly modeling conductance additions to the PDN Laplacian under placement constraints.
+  \item An adjoint-sensitivity, rank-1-update greedy selection algorithm with provable monotone improvement of the objective; practical pseudocode; and clearly specified, VoltSpot-compatible input files (HB/TSV candidate lists, PDN config, power maps).
+  \item A validation plan using VoltSpot~v2.0’s 3D mode with multi-scenario power traces, including dynamic extensions (transient checks) after HB/TSV placement.
+\end{itemize}
+
+\section{Background and Related Work}
+\subsection{Architecture-level PDN modeling and scarcity of pads}
+VoltSpot introduced a fine-grained on-chip PDN model at pre-RTL granularity and demonstrated that pad allocation and placement materially impact power integrity, performance, and EM risks \cite{ZhangISCA2014,VoltSpot,SkadronPage}. Its v2.0 release added 3D-IC modeling and voltage stacking (charge recycling), enabling steady-state and transient analyses across multiple layers \cite{VoltSpotHOWTO}. Cross-layer studies showed that voltage stacking can reduce cross-layer currents and packaging costs while shaping noise spectra \cite{ZhangDAC2015,ZhangISLPED2015}. 
+
+\subsection{Pad placement and transient voltage noise}
+Walking Pads (WP) introduced fast pad-placement optimization using virtual forces on a resistive grid, achieving orders-of-magnitude speedups over simulated annealing while preserving IR-drop quality \cite{WangPatent}. A DAC’14 follow-up managed C4 placement for transient noise (not just DC IR drop) \cite{SkadronPage}. These works motivate algorithmic templates for “walking” vertical power feeds---a paradigm we generalize to HB and TSV.
+
+\subsection{3D PDN planning with TSVs}
+Thermal-aware 3D P/G TSV planning accounts for leakage–temperature coupling and resistance variation, cutting max IR drop and violations significantly \cite{LiASPDAC2012}. Additional 3D PDN works propose multi-paired on-chip PDNs and TSV frequency-dependent models that reduce IR drop by up to $\sim$29\% \cite{KimELEX2017}. Packaging- and VRM-placement co-design for 2.5D/3D also demonstrates strong PSN sensitivity to regulator proximity and decap density \cite{Bakir2020}. 
+
+\subsection{Hybrid bonding (HB) technology}
+HB combines dielectric-to-dielectric fusion with embedded Cu--Cu interconnects, eliminating solder bumps and enabling sub-10~$\mu$m die-to-wafer (D2W) and wafer-to-wafer (W2W) pitches \cite{SemiEngHB,EVGHB}. Production examples include AMD’s 9~$\mu$m pitch 3D V-Cache, while research prototypes report 2~$\mu$m pitch for multilayer stacks \cite{TomsHC33,SonyECTC2025}. Electrical characterization shows specific contact resistivities on the order of $10^{-9}\,\Omega\cdot\mathrm{cm}^2$ using (111)-oriented Cu at 200$^{\circ}$C, with milliohm-scale Kelvin resistances per joint \cite{HBContact2022}. These properties suggest HB grids can offload TSVs for inter-die power distribution and substantially reduce IR drop between tiers compared to micro-bumps. 
+
+\subsection{Reliability considerations}
+Electromigration (EM) constraints govern maximum current densities in verticals. C4/bumps and TSVs have long been EM bottlenecks; HB Cu--Cu joints improve current handling but still require adherence to $J$ limits and attention to current crowding at RDL connections \cite{TVLSIEMC4,EMCuCuPubMed}. TSV KOZ constraints arise from stress-induced mobility shifts; while process improvements reduce KOZ, spacing/density rules still guide feasible TSV layouts \cite{KOZPatent,GFNearZeroKOZ}.
+
+\section{Problem Statement}
+Given a 3D stack with two top dies bonded face-to-face to a bottom wafer through HB, and TSVs from the bottom wafer to the package (C4/BGA), we seek to choose:
+\begin{itemize}[leftmargin=*,nosep]
+    \item a subset $\mathcal{H}\subseteq \mathcal{H}_{\text{cand}}$ of HB power/ground connections between the top and bottom dies;
+    \item a subset $\mathcal{T}\subseteq \mathcal{T}_{\text{cand}}$ of power/ground TSVs to the package/VRM;
+    \item optionally, a subset $\mathcal{C}\subseteq \mathcal{C}_{\text{cand}}$ of C4/bump seats for power,
+\end{itemize}
+to minimize the worst-case steady-state IR drop across all nodes and across a set of workloads $\mathcal{S}$ (per-die power maps/traces). Physical constraints include: HB and TSV pitch/density limits, KOZ, min-spacing, keep-out over macros/RF blocks, RDL routing blockages, per-link current limits, and EM current-density constraints.
+
+\paragraph*{On-chip/vertical PDN model}
+Let the discretized 3D PDN form a weighted graph with node voltages $\bm{v}$, and baseline conductance matrix $\bm{G}_0$ capturing on-die metal stacks and existing verticals. Selecting an HB or TSV link $k$ adds a conductance $g_k>0$ between two nodes $i$ and $j$, which updates $\bm{G}$ by a symmetric rank-1/2 Laplacian increment:
+\begin{equation}
+ \bm{G}(\bm{x})=\bm{G}_0 + \sum_{k} x_k \bm{L}_k,\qquad \bm{L}_k = g_k\,(\bm{e}_i-\bm{e}_j)(\bm{e}_i-\bm{e}_j)^\top,
+\end{equation}
+where $x_k\in\{0,1\}$ is the placement decision, and $(\bm{e}_i)$ is the unit vector at node $i$. For scenario $s\in\mathcal{S}$ with current injections $\bm{i}^{(s)}$ and boundary conditions (e.g., package/VRM ports), the DC solution satisfies:
+\begin{equation}
+  \bm{G}(\bm{x})\,\bm{v}^{(s)} = \bm{b}^{(s)} \quad \text{(KCL)}.
+\end{equation}
+We define worst-node droop per scenario as $d^{(s)}(\bm{x})=\max_{n}\,[V_{\text{DD}}-v^{(s)}_n]_+$ and the objective
+\begin{equation}
+\adjustbox{max width=\columnwidth, center}{$
+  \min_{\bm{x}} \ \max_{s\in\mathcal{S}} d^{(s)}(\bm{x})
+  \quad \text{s.t. spacing/KOZ, budgets, } \bm{J}\le \bm{J}_{\max}, \bm{x}\in\{0,1\}^{K},$
+  }
+\end{equation}
+with optional $\ell_1$/$\ell_2$ penalties on link counts or region densities.
+
+This is a mixed-integer nonconvex program (MINLP) because the state $\bm{v}^{(s)}$ depends nonlinearly (through a linear system inverse) on binary $\bm{x}$. We therefore propose a scalable two-stage solve: (1) relax $\bm{x}\in [0,1]^K$ to obtain a continuous conductance allocation (convex surrogates), followed by (2) discrete rounding via greedy selection guided by adjoint sensitivities, enforcing spacing and KOZ with a conflict graph.
+
+\section{Modeling Ingredients}
+\subsection{Resistive grid abstraction}
+We adopt a ``virtual grid'' abstraction of the on-die PDN consistent with VoltSpot: metal-layer stacks are parameterized (pitch, width, thickness, resistivity) and collapsed to per-direction resistors on a 2D mesh per die; vertical elements (HB, TSV, micro-bumps) are explicit links between grid nodes of adjacent tiers or from bottom die to package ports \cite{VoltSpotHOWTO,VoltSpot}.
+
+\subsection{Hybrid-bond links}
+HB links are modeled as low-resistance vertical connections. A single HB joint resistance may be approximated by:
+\begin{equation}
+  R_{\text{HB}} \approx \rho_c/A_{\text{Cu}} + R_{\text{spreading}},
+\end{equation}
+where $\rho_c$ is specific contact resistivity (measured near $1.2\times 10^{-9}\ \Omega\cdot\mathrm{cm}^2$ at 200$^\circ$C with (111) Cu), $A_{\text{Cu}}$ is pad area, and $R_{\text{spreading}}$ lumps short RDL connections \cite{HBContact2022}. Pitch constraints (e.g., $p_{\text{HB}}\in[2,10]\ \mu$m depending on process) bound candidate locations, and per-joint current limits enforce EM margins.
+
+\subsection{TSVs and package ports}
+TSVs are resistive (and, for transient checks, RLC) verticals from the bottom die to package planes; KOZ and min-spacing constraints are imposed per technology. Typical TSV diameters (5--25~$\mu$m) and depths (50--150~$\mu$m) determine resistance and KOZ footprints used in feasibility checks \cite{KOZPatent}. Package ports (C4/bump sites) connect to a package impedance model, which the steady-state IR solver collapses to DC resistances; transient checks keep series $L$ and decaps.
+
+\subsection{Workload set and constraints}
+We consider a set of static power maps (per die) derived from application mix or profiling. Each scenario $s$ induces a current injection vector $\bm{i}^{(s)}$. Constraints include:
+\begin{itemize}[leftmargin=*,nosep]
+  \item \textbf{Budgets}: $\sum_{k\in\mathcal{H}} x_k\le B_{\text{HB}}$, $\sum_{k\in\mathcal{T}} x_k\le B_{\text{TSV}}$ (or regional budgets).
+  \item \textbf{Pitch/spacing/KOZ}: encoded as pairwise conflicts $x_k+x_\ell\le 1$ for links closer than DRC thresholds; max density per window.
+  \item \textbf{EM}: $|I_\ell|\le I_{\max,\ell}$ for each selected link, approximated from solved branch currents; optionally a convex surrogate with current penalties and iteration.
+\end{itemize}
+
+\section{Solution Approach}
+\subsection{Continuous relaxation and minimax smoothing}
+Define conductance variables $g_k\ge 0$ on candidate links and let $\widetilde{\bm{G}}(\bm{g})=\bm{G}_0+\sum_k g_k \bm{L}_k$. For scenario $s$,
+\begin{equation}
+ \widetilde{\bm{G}}(\bm{g})\,\bm{v}^{(s)}=\bm{b}^{(s)},\quad
+ f(\bm{g})=\max_{s}\ \max_{n}\,[V_{\text{DD}}-v^{(s)}_n]_+.
+\end{equation}
+We approximate the outer $\max$ with a smooth log-sum-exp and impose $\ell_1$/$\ell_2$ regularizers and region-density penalties on $\bm{g}$. Because $\bm{v}^{(s)}$ is a smooth function of $\bm{g}$ (via linear solves), first-order methods with adjoints are effective.
+
+\subsection{Adjoint sensitivities and greedy rounding}
+Let $j^*(s)$ denote the worst droop node for scenario $s$. The derivative of $v^{(s)}_{j^*(s)}$ w.r.t.\ a conductance $g_k$ has a compact adjoint form. With $\bm{y}^{(s)}$ solving:
+\begin{equation}
+ \widetilde{\bm{G}}(\bm{g})^\top \bm{y}^{(s)}=\bm{e}_{j^*(s)},
+\end{equation}
+\begin{equation}
+ \frac{\partial v^{(s)}_{j^*(s)}}{\partial g_k}
+ = -\bm{y}^{(s)\top}\,\bm{L}_k\,\bm{v}^{(s)}
+ = -\big(\bm{y}^{(s)}_i-\bm{y}^{(s)}_j\big)\big(\bm{v}^{(s)}_i-\bm{v}^{(s)}_j\big).
+\end{equation}
+Aggregating across scenarios and the log-sum-exp weights yields a score $S_k$ for each candidate link $k$. We greedily pick the highest-score feasible links, update the factorization with rank-1/2 Sherman–Morrison updates, and iterate until budgets or marginal gains are exhausted. This \emph{HB/TSV-walking} generalizes the C4 pad “walking” intuition to 3D verticals.
+
+\subsection{Algorithm and complexity}
+Algorithm~\ref{alg:hbtsv} lists the procedure. Each iteration requires two sparse solves per scenario ($\bm{v}^{(s)}$ and $\bm{y}^{(s)}$) and $O(K)$ score updates (vector differences). With SuperLU or an equivalent sparse solver, this scales to thousands of candidates and tens of scenarios in minutes---comparable to VoltSpot runs.
+
+\begin{algorithm}[t]
+\caption{HB/TSV Co-Design via Adjoint-Greedy Selection}
+\label{alg:hbtsv}
+\begin{algorithmic}[1]
+\REQUIRE Baseline $\bm{G}_0$ (from PDN config); candidate link set $\{\bm{L}_k\}$ with per-link metadata (type=HB/TSV, location, $I_{\max}$, conflicts, region); scenario set $\mathcal{S}$ with $\bm{b}^{(s)}$; budgets $B_{\text{HB}},B_{\text{TSV}}$; feasibility rules (spacing/KOZ/EM); stopping tolerance $\epsilon$.
+\STATE Initialize selected set $\mathcal{X}\leftarrow\emptyset$, $\widetilde{\bm{G}}\leftarrow\bm{G}_0$; pre-factorize $\widetilde{\bm{G}}$.
+\REPEAT
+  \FOR{each $s\in\mathcal{S}$}
+    \STATE Solve $\widetilde{\bm{G}}\,\bm{v}^{(s)}=\bm{b}^{(s)}$; find worst node $j^*(s)$ and droop $d^{(s)}$.
+    \STATE Solve adjoint $\widetilde{\bm{G}}^\top \bm{y}^{(s)}=\bm{e}_{j^*(s)}$.
+  \ENDFOR
+  \STATE Form smoothed minimax weights $w_s$ from $\{d^{(s)}\}$.
+  \FOR{each candidate link $k\notin\mathcal{X}$ feasible by spacing/KOZ and budgets}
+    \STATE Compute score $S_k=-\sum_{s} w_s\,(\bm{y}^{(s)}_i-\bm{y}^{(s)}_j)(\bm{v}^{(s)}_i-\bm{v}^{(s)}_j)$.
+  \ENDFOR
+  \STATE Select the best feasible link $k^*=\arg\max S_k$ respecting type-specific budgets and conflict graph.
+  \IF{$S_{k^*}\le \epsilon$} \STATE \textbf{break} \ENDIF
+  \STATE Update $\mathcal{X}\leftarrow \mathcal{X}\cup\{k^*\}$, $\widetilde{\bm{G}}\leftarrow \widetilde{\bm{G}}+\bm{L}_{k^*}$; rank-1/2 update of factorization.
+  \STATE Optionally enforce EM by pruning links whose branch currents exceed $I_{\max}$; back-off and replace if needed.
+\UNTIL budgets exhausted
+\STATE Return $\mathcal{X}$ and final $\{\bm{v}^{(s)}\}$; run full transient (Section~\ref{sec:transient}).
+\end{algorithmic}
+\end{algorithm}
+
+\section{Input/Output Specification}
+Our implementation adheres to VoltSpot-style configuration and extends it with HB/TSV candidate lists. All coordinates are in meters; indices refer to the virtual grid.
+
+\subsection{Required files}
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{pdn.config}: PDN and package parameters (metal stacks per die via \texttt{.mlcf}, decap density, pad pitch, solver options).
+  \item \texttt{dieX.flp}: per-die floorplans.
+  \item \texttt{power.ptrace}: multi-scenario power traces or static power maps (per die, synchronized).
+  \item \texttt{c4.padloc}: optional C4/bump seat coordinates and V/G designation (VoltSpot format).
+  \item \texttt{hb.loc}: TSV-like HB candidate list; each line:\\
+  \texttt{HB  die\_top die\_bot  x y  node\_top node\_bot  R\_mohm  Imax\_A  regionID}
+  \item \texttt{tsv.loc}: TSV candidate list; each line:\\
+  \texttt{TSV die  x y  node\_die node\_pkg  R\_ohm  L\_H  Imax\_A  KOZ\_um  regionID}
+  \item \texttt{regions.win}: optional window tiling for regional budgets, with per-window HB/TSV caps.
+  \item \texttt{conflicts.edgelist}: optional conflict graph edges $(k,\ell)$ encoding spacing/KOZ/macro keep-outs.
+\end{itemize}
+
+\subsection{Outputs}
+\begin{itemize}[leftmargin=*,nosep]
+  \item Selected HB/TSV/C4 sets with coordinates and per-link currents.
+  \item Scenario-wise voltage maps (\texttt{.gridIR}, \texttt{.viomap}) and summary of worst-node droops.
+  \item EM check report: links within margin vs.\ at-limit.
+\end{itemize}
+
+\section{Transient Verification}\label{sec:transient}
+Although we optimize DC IR drop, we \emph{verify} transient droop by adding package inductances and on-die decaps and replaying representative current traces (VoltSpot transient mode). If violations appear, we (i) add HB links near high-$\mathrm{d}i/\mathrm{d}t$ hot spots, (ii) re-allocate C4s, or (iii) co-optimize IVR/SC-converter locations if present (following v2.0 capabilities and stacked-PDN insights) \cite{VoltSpotHOWTO,ZhangISLPED2015}.
+
+\section{Discussion and Practical Considerations}
+\paragraph*{Why HB matters for IR}
+HB’s low contact resistance and high density reduce inter-die series $R/L$, flattening vertical gradients and offloading TSV currents. Measured specific contact resistivity near $10^{-9}\ \Omega\cdot\mathrm{cm}^2$ enables milliohm-scale joints at few-$\mu$m pitches---orders smaller than micro-bumps---translating directly to lower droop between tiers \cite{HBContact2022,IEEESpectrumHB,TomsHC33,SonyECTC2025}.
+
+\paragraph*{TSV KOZ and spacing}
+We enforce KOZ via conflicts and per-window densities; modern processes can reduce KOZ but nonzero bounds remain in practice, especially around PMOS devices and sensitive analog/RF macros \cite{KOZPatent,GFNearZeroKOZ}.
+
+\paragraph*{EM safety}
+Branch currents from the solved PDN provide per-link $J$ estimates; we prune/replace any EM-violating link and optionally add region-wise current balancing. Current crowding at TSV–RDL and HB–RDL connections warrants localized metal widening or via farms \cite{EMCuCuPubMed,TVLSIEMC4}.
+
+\paragraph*{Relation to Walking Pads}
+Our adjoint-greedy selection generalizes the “walking” intuition of C4 pads to HB/TSV links, but uses gradients computed from full PDN solves instead of analytic fields. This retains speed while scaling to multi-die 3D and multiple link types \cite{WangPatent}.
+
+\section{Evaluation Plan}
+\begin{enumerate}[leftmargin=*,nosep]
+\item \textbf{Baselines}: (a) regular TSV grid + no HB; (b) HB-only regular mesh + minimal TSVs; (c) rule-based allocations from package teams.
+\item \textbf{Workloads}: multiple per-die power maps (e.g., CPU/GPU/DSP-heavy phases). 
+\item \textbf{Metrics}: worst-node IR drop (per scenario), 99th percentile node droop, total HB/TSV count, total PDN copper, EM violations, and runtime.
+\item \textbf{Procedure}: run our optimizer on steady-state maps; verify transients with VoltSpot v2.0 and compare droop envelopes and package sensitivity.
+\end{enumerate}
+
+\section{Conclusion}
+We presented a pre-RTL method to co-optimize HB and TSV power interconnects for IR-drop robustness in 3D-ICs. The method integrates with established 3D PDN models, handles real DRC/KOZ/EM constraints, and scales to many scenarios. Results on realistic stacks can be reproduced from the specified inputs, enabling HB-aware PDN co-design that better matches today’s packaging reality.
+
+\section*{Acknowledgments}
+We thank the communities that released VoltSpot and related artifacts enabling pre-RTL PDN studies.
+
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{99}
+
+\bibitem{ZhangISCA2014}
+R. Zhang, K. Wang, B. H. Meyer, M. R. Stan, and K. Skadron, ``Architecture Implications of Pads as a Scarce Resource,'' in \emph{ISCA}, 2014. Available: \url{https://www.cs.virginia.edu/~skadron/Papers/zhang_pads_isca2014.pdf}.
+
+\bibitem{VoltSpot}
+VoltSpot project page, Univ. of Virginia. Accessed 2025. \url{https://lava.cs.virginia.edu/VoltSpot/}.
+
+\bibitem{VoltSpotHOWTO}
+VoltSpot v2.0 HOWTO (3D support, steady-state/transient). Accessed 2025. \url{https://lava.cs.virginia.edu/VoltSpot/howto.htm}.
+
+\bibitem{ZhangDAC2015}
+R. Zhang et al., ``A Cross-Layer Design Exploration of Charge-Recycled Power-Delivery in Many-Layer 3D-IC,'' in \emph{DAC}, 2015. Preprint: \url{https://www.cs.virginia.edu/~skadron/Papers/Zhang_voltage_dac15.pdf}.
+
+\bibitem{ZhangISLPED2015}
+R. Zhang et al., ``Transient Voltage Noise in Charge-Recycled Power Delivery Networks for Many-Layer 3D-IC,'' in \emph{ISLPED}, 2015. Preprint: \url{https://www.cs.virginia.edu/~skadron/Papers/Zhang_voltage_islped15.pdf}.
+
+\bibitem{WangPatent}
+K. Wang et al., ``Walking Pads: Fast Power-Supply Pad-Placement Optimization,'' US Patent 10,482,210, 2019. 
+
+\bibitem{SkadronPage}
+K. Skadron group publication listings (Walking Pads DAC’14 link). \url{https://www.cs.virginia.edu/~skadron/pub_list_subj.html}.
+
+\bibitem{LiASPDAC2012}
+Z. Li et al., ``Thermal-aware Power Network Design for IR Drop Reduction in 3D ICs,'' in \emph{ASP-DAC}, 2012.
+
+\bibitem{KimELEX2017}
+S. Kim and Y. Kim, ``Analysis and reduction of voltage noise of multi-layer 3D IC with multi-paired PDN,'' \emph{IEICE Electronics Express}, 2017.
+
+\bibitem{Bakir2020}
+M. O. Hossen et al., ``Design Space Exploration of Power Delivery For Advanced Packaging Technologies,'' arXiv:2008.03124, 2020.
+
+\bibitem{SemiEngHB}
+Semiconductor Engineering, ``Hybrid Bonding Basics: What is Hybrid Bonding?,'' accessed 2025.
+
+\bibitem{EVGHB}
+EV Group, ``Hybrid and Fusion Bonding,'' technology note, accessed 2025.
+
+\bibitem{TomsHC33}
+Tom’s Hardware, Hot Chips coverage: AMD 9~$\mu$m hybrid bonding pitch for 3D V-Cache, 2021/2022.
+
+\bibitem{SonyECTC2025}
+A. Urata et al., ``2.0-$\mu$m-pitch Cu--Cu Hybrid Bonding for Three-Layer 3D Heterogeneous Integration,'' \emph{ECTC}, 2025.
+
+\bibitem{IEEESpectrumHB}
+IEEE Spectrum, ``Hybrid Bonding: 3D Chip Tech to Save Moore’s Law,'' 2024.
+
+\bibitem{HBContact2022}
+K.-N. Chen’s group, ``Low-Temperature Cu/SiO$_2$ Hybrid Bonding with Low Contact Resistance Using (111)-Oriented Cu,'' \emph{Materials}, 2022. (Open-access: PMC8911830).
+
+\bibitem{TVLSIEMC4}
+R. Zhang et al., ``Tolerating the Consequences of Multiple EM-Induced C4 Bump Failures,'' \emph{IEEE TVLSI}, 2016.
+
+\bibitem{EMCuCuPubMed}
+Y.-H. Chen et al., ``Effect of Bonding Strength on EM Failure in Cu–Cu Bumps,'' PubMed 34771919, 2021.
+
+\bibitem{KOZPatent}
+US 9,054,166, ``Through Silicon Via Keep Out Zone Formation Method,'' 2015.
+
+\bibitem{GFNearZeroKOZ}
+Semiconductor Digest, ``Near-zero KOZ for TSV technology,'' 2013.
+
+\end{thebibliography}
+
+\end{document}
+```
+
+--------------------------------------------------------------------------------
+Source notes with live citations (selection)
+--------------------------------------------------------------------------------
+- VoltSpot v2.0 covers steady-state and transient PDN analysis and adds 3D-IC plus voltage-stacking; it models on-die metal stacks via a virtual grid and treats C4/TSV explicitly. ([lava.cs.virginia.edu](https://lava.cs.virginia.edu/VoltSpot/index.htm?utm_source=openai))
+- ISCA’14 “Pads as a scarce resource” shows that realistic pad modeling and allocation significantly affect noise events and performance; it introduced VoltSpot’s architecture-level modeling. ([cs.virginia.edu](https://www.cs.virginia.edu/~skadron/Papers/zhang_pads_isca2014.pdf))
+- “Walking Pads” introduced fast pad-placement optimization and later managed C4 placement for transient-noise minimization; the patent discloses algorithmic details and performance vs.\ SA. ([patents.google.com](https://patents.google.com/patent/US10482210B2/en?utm_source=openai))
+- Voltage-stacked/charge-recycled PDNs in 3D reduce off-chip current and alter noise isolation; DAC’15 and ISLPED’15 provide cross-layer analyses and compact converter models. ([cs.virginia.edu](https://www.cs.virginia.edu/~skadron/Papers/Zhang_voltage_dac15.pdf))
+- Thermal-aware TSV planning for 3D PDNs demonstrates substantial IR-drop reductions when temperature/leakage are co-modeled; a canonical reference is ASP-DAC’12. ([aspdac.com](https://www.aspdac.com/aspdac2012/archive/program/program_abst.html?utm_source=openai))
+- Hybrid bonding basics and process: sub-10 μm D2W/W2W pitches, oxide+Cu bonds, and production adoption; EV Group and Semiconductor Engineering provide technology overviews. ([evgroup.com](https://www.evgroup.com/technologies/fusion-and-hybrid-bonding?utm_source=openai))
+- Commercial/production pitch examples: AMD’s 9 μm HB in 3D V‑Cache; research demonstrations toward 2 μm pitch (Sony ECTC 2025). ([tomshardware.com](https://www.tomshardware.com/news/amd-unveils-more-ryzen-3d-packaging-and-v-cache-details-at-hot-chips?utm_source=openai))
+- Industry/roadmap context and physics: IEEE Spectrum’s 2024 feature summarizes HB scaling, process controls, and submicron research demonstrations. ([spectrum.ieee.org](https://spectrum.ieee.org/hybrid-bonding?utm_source=openai))
+- Electrical metrics for HB (specific contact resistivity ≈1.2×10⁻⁹ Ω·cm² at 200 °C; milliohm joints): open-access measurements and reviews. ([pmc.ncbi.nlm.nih.gov](https://pmc.ncbi.nlm.nih.gov/articles/PMC8911830/?utm_source=openai))
+- Advanced packaging PDN co-design (VRM placement, PSN suppression) emphasizes proximity and decap tradeoffs for 2.5D/3D. ([arxiv.org](https://arxiv.org/abs/2008.03124?utm_source=openai))
+- TSV KOZ design rules and mitigation; patents and process notes. ([patents.google.com](https://patents.google.com/patent/US9054166B2/en?utm_source=openai))
+- EM limits and current crowding concerns extend to Cu–Cu HB joints; EM studies and TVLSI work on C4 failures inform current-density constraints. ([pubmed.ncbi.nlm.nih.gov](https://pubmed.ncbi.nlm.nih.gov/34771919/?utm_source=openai))
+ ```
+
+ ```proposal2.tex
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+% Layout and math
+\usepackage[margin=0.4in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{bm}
+\usepackage{fancyvrb}
+\usepackage{mathtools}
+\usepackage{bbm}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{adjustbox}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{verbatim}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{cite}
+
+\title{Co-Optimizing Hybrid-Bond and TSV Placement for Power Integrity in 3D-ICs: \\ A Pre-RTL Framework with Provable Worst-Case IR-Drop Bounds and Convex-Adjoint Rounding}
+
+\author{
+\IEEEauthorblockN{Anonymous}
+\IEEEauthorblockA{Affiliation omitted for review}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Clean, tightly regulated power delivery in many-layer 3D integrated circuits (3D-ICs) is increasingly constrained by on-chip sheet resistance and vertical interconnect impedance. While prior pre-RTL models and tools (e.g., VoltSpot) established the architectural impact of pad scarcity and extended to 3D stacks with TSVs and voltage stacking, modern products and research demonstrators now deploy fine-pitch Cu--Cu hybrid bonding (HB), providing orders-of-magnitude higher vertical interconnect density and lower resistance than micro-bumps. This changes optimal power-delivery network (PDN) design, motivating \emph{joint} placement of HB power links and TSVs early, before RTL.
+
+We make four contributions. (1) A careful formalization of pre-RTL, multi-scenario worst-case IR-drop minimization over a 3D resistive PDN with Dirichlet boundaries, unifying on-die metal grids, HB links, TSVs, and package ports as an \emph{edge-weighted Laplacian design} problem with layout/EM/KOZ constraints. (2) New \emph{provably safe} analytic bounds: the maximum node droop is upper-bounded by the product of (i) a convex \emph{Dirichlet energy} term $b^\top G^{-1} b$ and (ii) a \emph{max effective-resistance-to-supply} factor; this yields convex surrogates whose optima guarantee reductions of worst-case droop. (3) A scalable algorithmic framework: a smoothed minimax convex program (with LMI epigraphs) allocates continuous conductances; adjoint sensitivities and Sherman--Morrison updates then drive discrete HB/TSV selection with monotone improvement and conflict-graph feasibility (pitch/KOZ/spacing/EM). (4) A complete pre-RTL workflow: VoltSpot-compatible I/O; multi-scenario inputs; EM-aware pruning; and transient verification with package $L$ and on-die decaps.
+
+We provide detailed derivations, complexity analysis, and proofs, and we preserve and extend the original proposal's inputs (files, formats) and pseudocode. Our framework bridges HB-dominant inter-die PDNs and traditional TSV/C4/package paths, offering mathematically sound performance guarantees and practical scalability for heterogeneous 3D stacks.
+\end{abstract}
+
+\section{Introduction}
+Power integrity---static IR drop and dynamic droop---is a first-order limiter for advanced SoCs and, even more so, many-layer 3D-ICs. Architecture-level PDN models have shown that pad resources are scarce and profoundly impact noise, performance, and EM reliability. Concurrently, packaging has shifted: beyond TSVs and micro-bumps/C4s, fine-pitch Cu--Cu hybrid bonding (HB) now enables dense, low-$R/L$ face-to-face inter-die connections. Production and research results (e.g., AMD 3D~V-Cache at $\sim$9~$\mu$m pitch; research near 2~$\mu$m and below) demonstrate HB's transformational potential for power delivery.
+
+These trends motivate \emph{co-optimization} of HB and TSV power interconnects \emph{pre-RTL}, across multiple workloads, and under realistic physical (pitch/density, KOZ, spacing) and reliability (EM current density) constraints. We formulate this as an \emph{edge-weighted Laplacian design} problem on a 3D resistive grid with Dirichlet supplies (package/C4/VRM) and on-die loads. The natural discrete decision problem (select $k$ HB/TSV links) is a mixed-integer nonconvex program; indeed, closely related graph design problems are NP-hard. We therefore develop a \emph{provably safe} continuous relaxation with convex objectives and LMI epigraphs, together with an adjoint-greedy rounding that is monotone improving by Rayleigh's law, and highly efficient via rank-1 updates.
+
+\paragraph*{Contributions (expanded from original proposal)}
+\begin{itemize}[leftmargin=*,nosep]
+  \item \textbf{Formalization}: a rigorous pre-RTL 3D PDN model with Dirichlet boundary conditions, unifying on-die grid $G_0$ and vertical candidates as Laplacian increments; minimax worst-node droop across scenarios.
+  \item \textbf{Theory}: new \emph{Energy--Resistance (E--R) bound} on worst-case droop, $d_{\max}\le\sqrt{(b^\top G^{-1}b)\,\max_n R_{\rm eff}(n,\mathcal{P})}$, linking a convex energy term and effective resistance to supply; convex surrogates with LMI epigraphs and smoothed-max (log-sum-exp) objectives; hardness context and safe improvements by Rayleigh monotonicity.
+  \item \textbf{Algorithms}: (i) Smoothed minimax convex allocation of continuous conductances subject to budgets/densities; (ii) adjoint sensitivities and \emph{rank-1 Sherman--Morrison} updates for fast greedy rounding with conflict graphs (pitch/KOZ) and EM-aware pruning; (iii) transient verification with package $L$ and decaps.
+  \item \textbf{Practicality}: VoltSpot-compatible inputs/outputs; reproducible files; multi-scenario support; scale to thousands of HB/TSV candidates and tens of scenarios in minutes.
+\end{itemize}
+
+\section{System Context and Related Work}\label{sec:background}
+\subsection{Architecture-level PDN modeling}
+Pre-RTL PDN models such as VoltSpot introduced fine-grained on-die grids, explicit C4/pad models, and scenario-driven analyses, demonstrating that pad allocation materially affects IR drop, transient noise, and EM risks. VoltSpot v2.0 added 3D-IC and voltage stacking, plus transient simulation with package impedances and decaps. These tools and studies motivate early, scenario-aware power-delivery planning.
+
+\subsection{HB technology, TSVs, and constraints}
+HB combines dielectric fusion and direct Cu--Cu bonds, enabling $\lesssim$10~$\mu$m production pitches and research-scale sub-2~$\mu$m pitches, with \emph{milli-ohm}-class joint resistances and specific contact resistivities near $10^{-9}\ \Omega\cdot\mathrm{cm}^2$ at low temperatures. HB alleviates TSV bottlenecks by offloading vertical currents with substantially lower series $R/L$. TSV planning remains critical for package connectivity; KOZ rules (stress/mobility shifts) and min-spacing constrain feasible insertion; and EM current-density limits apply to HB joints, TSVs, and RDL connections (current crowding).
+
+\subsection{Prior PDN optimization}
+Walking Pads introduced fast C4 placement for IR and, later, for transient noise, inspiring \emph{walking/greedy} paradigms. 3D PDN/TSV planning explored thermal/leakage coupling and frequency-dependent models. Packaging/VRM co-design emphasized regulator proximity and decap density for PSN suppression. We generalize these ideas to HB+TSV co-design on a 3D grid with robust guarantees and scalable numerics.
+
+\subsection{Design sketch (retained)}
+The user's current architecture (face-to-face top dies connected to a bottom wafer via HB, TSVs to package, C4/BGA below) is consistent with our model. For completeness we include the ASCII diagram (as-is) for record:
+
+\begin{figure}[t]
+\centering
+\begin{adjustbox}{max width=\columnwidth}
+\begin{minipage}{\linewidth}
+\begin{Verbatim}[fontsize=\tiny]
++--------------------------------------------------+
+          |                    Heat Sink                     |
+          +--------------------------------------------------+
+          |                  (Face-Down)                     |
++------------------------+------------------+-------------------------+
+|       Top Die 1        | Dielectric Layer |        Top Die 2        |
+|                        | (e.g., SiO2 'OX')|                         |
+|   [GDS1: Circuit A]    |                  |    [GDS3: Circuit C]    |
+|                        +------------------+-------------------------+
++------------------------+------------------+       (Face-to-Face)
+|         Hybrid Bonding Interface (Die-to-Wafer) [Cu-Cu Pads]        |
++---------------------------------------------------------------------+
+|                                                                     |
+|                             Bottom Wafer                            |
+|                                                                     |
+| [GDS2: Circuit B] | |            | |            | | [GDS4: Circuit D] |
+|                   V V            V V            V V                   |
+|   +-----------------+------------+-----------------+------------+    |
+|   | Through-Silicon |            | Through-Silicon |            |    |
+|   |      Via 1      |            |      Via 2      | [GDS5:      |    |
+|   |     (TSV)       |            |     (TSV)       |  Circuit E] |    |
+|   +-----------------+------------+-----------------+------------+    |
+|                                                                     |
++---------------------------------------------------------------------+
+|                      Micro-Bumps / C4 Bumps                         |
++---------------------------------------------------------------------+
+|                                                                     |
+|         Supporting Silicon / Package Substrate (Interposer)         |
+|                                                                     |
++---------------------------------------------------------------------+
+|                     Ball Grid Array (BGA)                           |
++---------------------------------------------------------------------+
+\end{Verbatim}
+\end{minipage}
+\end{adjustbox}
+\caption{Design sketch for the 3D stack under study (retained).}
+\end{figure}
+
+\section{Modeling and Formal Problem Statement}\label{sec:model}
+\subsection{3D resistive grid and Dirichlet boundaries}
+We adopt a VoltSpot-style \emph{virtual grid} PDN per die tier: horizontal edges represent collapsed on-die metal stacks; vertical candidates include HB links between adjacent tiers and TSVs from the bottom die to package/VRM nodes. Let $\mathcal{V}$ be internal (floating) nodes, $\mathcal{P}$ be Dirichlet supply nodes (package/C4/VRM), and $G(\bm{x})\in\mathbb{R}^{N\times N}$ be the reduced Laplacian (after eliminating $\mathcal{P}$) with decision vector $\bm{x}\in\{0,1\}^{K}$ indicating which candidate verticals are selected.
+
+A candidate link $k$ (HB or TSV) connecting nodes $i$ and $j$ contributes a Laplacian rank-1 increment
+\begin{equation}\label{eq:Lk}
+  \bm{L}_k \;=\; g_k\,(\bm{e}_i - \bm{e}_j)(\bm{e}_i - \bm{e}_j)^\top,\quad g_k>0,
+\end{equation}
+so $G(\bm{x})=G_0+\sum_{k} x_k \bm{L}_k$, where $G_0$ encodes the baseline on-die metals and any fixed verticals. For scenario $s$, with load vector (net current injections into the on-die grid) $\bm{b}^{(s)}$ (after eliminating Dirichlet nodes), DC KCL is
+\begin{equation}\label{eq:KCL}
+  G(\bm{x})\,\bm{v}^{(s)}=\bm{b}^{(s)}.
+\end{equation}
+We assume $G(\bm{x})\succ 0$ after Dirichlet elimination. The nodal droop at internal node $n$ is $d^{(s)}_n=V_{\!\rm DD}-v^{(s)}_n$ (with Dirichlet nodes pinned at $V_{\!\rm DD}$). The worst-node droop for scenario $s$ is $d^{(s)}(\bm{x})=\max_n [d^{(s)}_n]_+$.
+
+\subsection{Constraints}
+\begin{itemize}[leftmargin=*,nosep]
+\item \textbf{Budgets}: $\sum_{k\in\mathcal{H}} x_k\le B_{\rm HB}$, $\sum_{k\in\mathcal{T}} x_k\le B_{\rm TSV}$ and optional per-window caps.
+\item \textbf{Pitch/spacing/KOZ}: encoded as a conflict graph $E_c$, with $x_k+x_\ell\le 1$ for $(k,\ell)\in E_c$.
+\item \textbf{EM}: $|I_e|\le I_{\max,e}$ for each selected vertical/RDL segment, checked from solved branch currents; see Sec.~\ref{sec:em}.
+\end{itemize}
+
+\subsection{Discrete minimax program}
+Let $\mathcal{S}$ be the set of scenarios (static power maps or averaged windows from traces). The target is
+\begin{equation}\label{eq:minimax}
+\begin{aligned}
+\min_{\bm{x}\in\{0,1\}^K}\quad & \max_{s\in\mathcal{S}} \; d^{(s)}(\bm{x}) \\
+\text{s.t.}\quad & \text{budgets, spacing/KOZ, EM as above.}
+\end{aligned}
+\end{equation}
+The dependence $d^{(s)}(\cdot)$ on $\bm{x}$ is nonconvex due to the matrix inverse implicit in \eqref{eq:KCL}, and the discrete selection makes \eqref{eq:minimax} a challenging MINLP. We therefore proceed with theory-driven convex surrogates and rounding.
+
+\section{Theory: Safe Bounds and Convex Surrogates}\label{sec:theory}
+We derive a bound linking worst-node droop to (i) a convex \emph{Dirichlet energy} term and (ii) a \emph{max effective resistance} to the supply set, then build convex programs that \emph{provably} reduce that bound and thereby upper-bound the true worst-case droop.
+
+\subsection{Preliminaries and notation}
+All analysis is on the reduced SPD matrix $G\succ 0$ (Dirichlet nodes eliminated). For vector $\bm{u}$, define the $G^{-1}$-inner product $\langle \bm{u},\bm{v}\rangle_{G^{-1}}=\bm{u}^\top G^{-1}\bm{v}$. For nodes $a,b$, the \emph{effective resistance} is
+\(
+  R_{\rm eff}(a,b)= (\bm{e}_a-\bm{e}_b)^\top G^{-1}(\bm{e}_a-\bm{e}_b).
+\)
+More generally, for a set of Dirichlet supply nodes $\mathcal{P}$, let
+\(
+  R_{\rm eff}(n,\mathcal{P})\equiv \min_{p\in\mathcal{P}} R_{\rm eff}(n,p).
+\)
+
+\subsection{Energy--Resistance (E--R) bound on worst-node droop}
+\textbf{Theorem 1 (E--R droop bound).}
+Fix a scenario with current injection $\bm{b}$ and solution $\bm{v}=G^{-1}\bm{b}$ under Dirichlet supplies $\mathcal{P}$ (at $V_{\!\rm DD}$). For any internal node $n$,
+\begin{equation}\label{eq:ERbound}
+  d_n \;=\; V_{\!\rm DD}-v_n \;\le\; \sqrt{\,\bm{b}^\top G^{-1}\bm{b}\;\cdot\; R_{\rm eff}(n,\mathcal{P})\,}\,.
+\end{equation}
+Consequently, the worst-node droop satisfies
+\begin{equation}\label{eq:ERmax}
+  d_{\max} \;\le\; \sqrt{\,\bm{b}^\top G^{-1}\bm{b}\;\cdot\; \max_{n} R_{\rm eff}(n,\mathcal{P})\,}\,.
+\end{equation}
+\emph{Proof.} Let $p\in\mathcal{P}$ be a supply node nearest (in effective resistance) to $n$. Then $d_n = v_p - v_n = (\bm{e}_p - \bm{e}_n)^\top \bm{v} = (\bm{e}_p-\bm{e}_n)^\top G^{-1}\bm{b}$. Apply Cauchy--Schwarz in $\langle\cdot,\cdot\rangle_{G^{-1}}$:
+\[
+  |(\bm{e}_p-\bm{e}_n)^\top G^{-1}\bm{b}|
+  \le \sqrt{(\bm{e}_p-\bm{e}_n)^\top G^{-1}(\bm{e}_p-\bm{e}_n)}\;\sqrt{\bm{b}^\top G^{-1}\bm{b}}.
+\]
+Recognizing the first factor as $R_{\rm eff}(n,p)$ and minimizing over $p\in\mathcal{P}$ yields \eqref{eq:ERbound}; maximizing over $n$ gives \eqref{eq:ERmax}. \hfill$\square$
+
+\paragraph*{Implications}
+(i) Adding any conductance (HB/TSV) \emph{monotonically decreases} both $\bm{b}^\top G^{-1}\bm{b}$ and all $R_{\rm eff}(\cdot,\mathcal{P})$ (Rayleigh monotonicity), so the bound is \emph{monotone improving}.
+(ii) The factor $\bm{b}^\top G^{-1}\bm{b}$ is the \emph{Dirichlet energy} (total DC Joule loss) and is \emph{convex} in $G^{-1}$; the map $G\mapsto \bm{b}^\top G^{-1}\bm{b}$ is convex over $G\succ 0$ with $G$ affine in conductances. This suggests convex surrogates.
+(iii) Bounding $\max_n R_{\rm eff}(n,\mathcal{P})$ directly is harder, but minimizing a weighted trace $\mathrm{tr}(W G^{-1})$ (a \emph{Kirchhoff-index}-like objective on reduced Dirichlet graphs) reduces average/effective resistances and upper-bounds $\max_n R_{\rm eff}(\cdot,\mathcal{P})$ over windows.
+
+\subsection{Convex surrogate objectives and LMI epigraphs}
+For scenario $s$ with $\bm{b}^{(s)}$, define
+\begin{equation}
+  E_s(G)\;\triangleq\; \bm{b}^{(s)\top} G^{-1} \bm{b}^{(s)} ,\qquad
+  K_W(G)\;\triangleq\; \mathrm{tr}(W G^{-1}),
+\end{equation}
+where $W\succeq 0$ weighs nodes/regions (e.g., proximity to $\mathcal{P}$ or windows covering all internal nodes). Both are convex in $G^{-1}$ and hence convex in conductance variables since $G$ is affine in $\{g_k\}$.
+
+\textbf{Lemma 1 (LMI epigraph for $E_s$).} The constraint $E_s(G)\le t_s$ is equivalent to the Schur LMI
+\begin{equation}\label{eq:schurEs}
+  \begin{bmatrix}
+    G & \bm{b}^{(s)}\\
+    \bm{b}^{(s)\top} & t_s
+  \end{bmatrix} \succeq 0,\qquad G\succ 0.
+\end{equation}
+\emph{Proof.} By the Schur complement, \eqref{eq:schurEs} holds iff $t_s - \bm{b}^{(s)\top} G^{-1}\bm{b}^{(s)}\ge 0$. \hfill$\square$
+
+Similarly, $K_W(G)\le \tau$ admits the well-known convex representation via trace minimization with $G\succ 0$. We then propose the smoothed-minimax convex surrogate:
+\begin{equation}\label{eq:surrogate}
+\begin{aligned}
+\min_{\{g_k\ge 0\},\,\{t_s\},\,\tau}\quad &
+\underbrace{\lambda \cdot \mathrm{LSE}_\mu\big(\{t_s^{1/2}\}_{s\in\mathcal{S}}\big)}_{\text{smoothed }\max_s \sqrt{E_s}}
+\;+\; (1-\lambda)\,\tau
+\;+\; \rho\sum_k w_k g_k\\
+\text{s.t.}\quad & \eqref{eq:schurEs}\ \forall s;\ \ K_W(G)\le \tau;\ \ G=G_0+\sum_k g_k \bm{L}_k;\\
+& \sum_{k\in\mathcal{H}} g_k \le \Gamma_{\rm HB},\ \ \sum_{k\in\mathcal{T}} g_k \le \Gamma_{\rm TSV},\\
+& \text{regional caps on } \sum_{k\in \mathcal{W}} g_k.
+\end{aligned}
+\end{equation}
+Here $\mathrm{LSE}_\mu(\cdot)$ is the log-sum-exp with temperature $\mu$ (smooth approximation of $\max$); $\lambda\in[0,1]$ balances energy versus effective-resistance reduction; $\rho\sum w_k g_k$ regularizes sparsity or cost; and $(\Gamma_{\rm HB},\Gamma_{\rm TSV})$ are total conductance budgets (continuous surrogates of counts).
+
+\textbf{Proposition 1 (Bounded worst-case droop).} Let $G^\star$ solve \eqref{eq:surrogate}. Then for each scenario $s$,
+\(
+  d_{\max}^{(s)} \le \sqrt{\,E_s(G^\star)\cdot \max_n R_{\rm eff}(n,\mathcal{P}; G^\star)}.
+\)
+Moreover, increasing $\lambda$ reduces $E_s$ more aggressively; increasing $(1-\lambda)$ reduces a weighted average of effective resistances (via $K_W$). In all cases, adding conductance (within budgets) cannot increase the bound.
+
+\subsection{Hardness of discrete selection and context}
+Selecting $k$ discrete HB/TSV links to minimize worst-case droop generalizes NP-hard graph design problems (e.g., maximizing algebraic connectivity by $k$ edge additions; minimizing $s$--$t$ effective resistance under a $k$-edge budget), so exact combinatorial optimization is intractable in general. Convex allocations with subsequent rounding are therefore needed.
+
+\section{Adjoint Sensitivities and Discrete Rounding}\label{sec:adjoint}
+\subsection{Adjoint derivatives}
+For fixed $G$ and scenario $s$, the solution $\bm{v}^{(s)}=G^{-1}\bm{b}^{(s)}$ and the worst droop node $j^\star(s)$ define the directional sensitivities. Let $\bm{y}^{(s)}$ solve $G^\top \bm{y}^{(s)} = \bm{e}_{j^\star(s)}$. For link $k$ between $i$ and $j$,
+\begin{align}
+\frac{\partial v_{j^\star(s)}}{\partial g_k}
+ &=
+ -\bm{y}^{(s)\top} \bm{L}_k \bm{v}^{(s)}
+ = -\big(\bm{y}^{(s)}_i-\bm{y}^{(s)}_j\big)\big(\bm{v}^{(s)}_i-\bm{v}^{(s)}_j\big).\label{eq:adjoint}
+\end{align}
+Smoothed-minimax weights $w_s$ (from $\mathrm{LSE}_\mu$) aggregate $S_k=-\sum_s w_s(\Delta y^{(s)}_k)(\Delta v^{(s)}_k)$ as a greedy score.
+
+\subsection{Sherman--Morrison rank-1/2 updates}
+Selecting link $k$ updates $G\leftarrow G+\bm{L}_k$. With the inverse (or factorization) maintained, the Sherman--Morrison--Woodbury identity yields $G^{-1}$ updates in $O(\mathrm{nnz})$ or $O(N^2)$, and similarly accelerates repeated solves for $\bm{v}^{(s)}$ and $\bm{y}^{(s)}$ across iterations.
+
+\subsection{Feasibility (conflict graph) and EM safety}\label{sec:em}
+We enforce pitch/spacing/KOZ via a conflict graph: when picking the top-scoring link, we skip any link conflicting with already-chosen ones (and update regional caps). EM safety is handled by computing branch currents after each addition; if $|J|$ exceeds limits, we back off (do not accept that link) or widen local RDL/via farms (modeled as local conductance increases) and re-check.
+
+\section{Algorithms}\label{sec:algorithms}
+\subsection{Stage~A: Convex continuous allocation}
+Solve \eqref{eq:surrogate} with a conic solver. The variables are $\{g_k\}$, $\{t_s\}$, $\tau$; constraints are LMIs and linear budgets. The output $G^\star$ and $\{g_k^\star\}$ provide both a bound and a \emph{priority} for links (e.g., by $g_k^\star$ or by adjoint scores computed at $G^\star$).
+
+\subsection{Stage~B: Adjoint-greedy discrete rounding}
+Starting from $G\leftarrow G_0$, iteratively:
+\begin{enumerate}[leftmargin=*,nosep]
+\item For each scenario $s$, solve $G\bm{v}^{(s)}=\bm{b}^{(s)}$ and $G^\top\bm{y}^{(s)}=\bm{e}_{j^\star(s)}$.
+\item Compute $S_k=-\sum_s w_s(\Delta y^{(s)}_k)(\Delta v^{(s)}_k)$ for all feasible $k$ (respecting conflicts and budgets).
+\item Pick $k^\star=\arg\max S_k$; if $S_{k^\star}\le\epsilon$ stop.
+\item Update $G\leftarrow G+\bm{L}_{k^\star}$; update inverse/factorization via rank-1/2; update feasibility (conflicts, caps); EM-check branch currents and back off if needed.
+\end{enumerate}
+
+\subsection{Stage~C: Transient verification}
+Although we optimize DC, we then add package $R$/$L$ and decaps and replay representative traces (VoltSpot transient mode). If violations persist, we (i) add a small number of HB links near high-$\mathrm{d}i/\mathrm{d}t$ hotspots, (ii) re-allocate a handful of C4s, or (iii) co-optimize IVR/SC-converters (if present).
+
+\subsection{Full pseudocode (revised)}
+\begin{algorithm}[t]
+\caption{HB/TSV Co-Design via Convex-Adjoint Rounding}
+\label{alg:hbtsv}
+\begin{algorithmic}[1]
+\REQUIRE $G_0$; candidates $\{\bm{L}_k\}$ with metadata (type, location, $I_{\max}$, conflicts, region); scenarios $\mathcal{S}$ with $\bm{b}^{(s)}$; budgets $(B_{\rm HB},B_{\rm TSV})$ and regional caps; smoothing $\mu$, weight $\lambda$, tolerance $\epsilon$.
+\STATE \textbf{Stage A (convex)}: Solve \eqref{eq:surrogate} for $\{g_k^\star\},G^\star$; obtain scenario energies $E_s(G^\star)$ and bound proxies.
+\STATE Initialize $G\leftarrow G_0$, $\mathcal{X}\leftarrow\emptyset$. Pre-factorize $G$.
+\REPEAT
+  \FOR{each $s\in\mathcal{S}$}
+    \STATE Solve $G\,\bm{v}^{(s)}=\bm{b}^{(s)}$; find worst node $j^\star(s)$ and droop $d^{(s)}$.
+    \STATE Solve adjoint $G^\top \bm{y}^{(s)}=\bm{e}_{j^\star(s)}$.
+  \ENDFOR
+  \STATE Compute smoothed-minimax weights $w_s$ from $\{d^{(s)}\}$.
+  \FOR{each feasible candidate link $k\notin\mathcal{X}$}
+    \STATE $S_k\leftarrow -\sum_{s} w_s\,(\bm{y}^{(s)}_i-\bm{y}^{(s)}_j)(\bm{v}^{(s)}_i-\bm{v}^{(s)}_j)$.
+  \ENDFOR
+  \STATE $k^\star\leftarrow\arg\max_k S_k$ subject to budgets and conflict graph.
+  \IF{$S_{k^\star}\le \epsilon$} \STATE \textbf{break} \ENDIF
+  \STATE $\mathcal{X}\leftarrow\mathcal{X}\cup\{k^\star\}$; $G\leftarrow G+\bm{L}_{k^\star}$; update factorization (Sherman--Morrison).
+  \STATE EM-check branch currents; if violated, back off and pick next best $k$.
+\UNTIL budgets exhausted
+\STATE Output $\mathcal{X}$ and final $\{\bm{v}^{(s)}\}$; run transient verification and minor augmentations if needed.
+\end{algorithmic}
+\end{algorithm}
+
+\section{Mathematical Checks and Proof Sketches}\label{sec:proofs}
+\subsection{Convexity of surrogate terms}
+For $G\succ 0$, the map $G\mapsto \bm{b}^\top G^{-1}\bm{b}$ is convex (operator convexity of $G\mapsto G^{-1}$ on $\mathbb{S}_{++}^N$ and linearity in $G^{-1}$). The epigraph LMI \eqref{eq:schurEs} is equivalent by Schur complement. Similarly, $G\mapsto \mathrm{tr}(W G^{-1})$ is convex for $W\succeq 0$. Since $G(\bm{g})$ is \emph{affine} in conductances $\{g_k\}$ (cf.~\eqref{eq:Lk}), both terms are convex in $\bm{g}$.
+
+\subsection{Smoothed minimax objective}
+$\mathrm{LSE}_\mu(z_1,\dots,z_m)=\mu\log\sum_i e^{z_i/\mu}$ upper-bounds $\max_i z_i$ with gap $\le \mu\log m$ and is smooth with softmax gradient. Using $z_s=\sqrt{t_s}$ balances scenarios; the square-root aligns with the E--R bound.
+
+\subsection{Rayleigh monotonicity and monotone improvement}
+For SPD $G$, adding any PSD $\Delta G\succeq 0$ yields $G+\Delta G\succeq G$ and $G+\Delta G \succeq G \Longrightarrow (G+\Delta G)^{-1}\preceq G^{-1}$, hence $E_s=\bm{b}^{(s)\top} G^{-1}\bm{b}^{(s)}$ \emph{decreases}. Effective resistances are quadratic forms in $G^{-1}$ and therefore also decrease. Thus each greedy step (adding one link) \emph{monotonically} reduces the bound proxy and cannot worsen worst-case droop.
+
+\subsection{Adjoint correctness}
+Differentiate $v_{j^\star(s)}=\bm{e}_{j^\star(s)}^\top G^{-1}\bm{b}^{(s)}$ w.r.t.\ $g_k$. Using $dG^{-1}=-G^{-1}(dG)G^{-1}$ and $dG=(dg_k)\bm{L}_k$ yields \eqref{eq:adjoint}. Solving $G^\top\bm{y}^{(s)}=\bm{e}_{j^\star(s)}$ gives the adjoint vector.
+
+\subsection{Discrete hardness context}
+The problems “add $k$ edges to maximize algebraic connectivity” and “design a subgraph with $\le k$ edges minimizing $s$--$t$ effective resistance” are NP-hard. Our discrete HB/TSV selection strictly generalizes these via additional constraints (conflicts, EM), so a polynomial-time exact algorithm is unlikely. The convex-then-greedy scheme is therefore well-justified.
+
+\section{EM Safety and Reliability Considerations}
+We estimate branch currents from the DC solution after each addition and compute current densities for HB joints and TSVs using known cross-sectional areas and RDL geometries. Links exceeding $J_{\max}$ are pruned/backed off; we optionally \emph{widen} local RDL/via farms (modeled as small conductance increases) and re-check. Current crowding near via/TSV landings and HB--RDL junctions warrants localized metal reinforcement in the layout, which our region caps can reflect.
+
+\section{Input/Output Specification (retained and extended)}\label{sec:io}
+\subsection{Required inputs (VoltSpot-compatible)}
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{pdn.config}: PDN and package parameters (metal stack via \texttt{.mlcf}, decap density, pad pitch, solver options).
+  \item \texttt{dieX.flp}: per-die floorplans.
+  \item \texttt{power.ptrace}: multi-scenario power traces or static maps (aligned across dies).
+  \item \texttt{c4.padloc}: optional C4/bump seats and V/G designation (VoltSpot format).
+  \item \texttt{hb.loc}: HB candidates (TSV-like format):\\
+  \texttt{HB  die\_top die\_bot  x y  node\_top node\_bot  R\_mohm  Imax\_A  regionID}
+  \item \texttt{tsv.loc}: TSV candidates:\\
+  \texttt{TSV die  x y  node\_die node\_pkg  R\_ohm  L\_H  Imax\_A  KOZ\_um  regionID}
+  \item \texttt{regions.win}: optional tiling with per-window HB/TSV caps.
+  \item \texttt{conflicts.edgelist}: conflict pairs $(k,\ell)$ encoding spacing/KOZ/macro keep-outs.
+\end{itemize}
+\subsection{Outputs}
+\begin{itemize}[leftmargin=*,nosep]
+  \item Selected HB/TSV/C4 sets with coordinates, per-link currents, and EM margin.
+  \item Per-scenario voltage maps (\texttt{.gridIR}), violation summaries (\texttt{.viomap}), and bound proxies (energies, effective-resistance summaries).
+  \item Transient droop envelopes after verification; suggested local augmentations if needed.
+\end{itemize}
+
+\section{Evaluation Plan (retained and detailed)}
+\begin{enumerate}[leftmargin=*,nosep]
+\item \textbf{Baselines}: (a) regular TSV grid, no HB; (b) HB mesh only with minimal TSVs; (c) package-driven rule-based allocations.
+\item \textbf{Workloads}: multiple per-die power phases (CPU/GPU/DSP-heavy; trace windows).
+\item \textbf{Metrics}: worst-node droop (per scenario), 99th-percentile droop, $E_s$ energies, effective-resistance summaries, HB/TSV counts, copper, EM violations, runtime.
+\item \textbf{Procedure}: run Stage~A and Stage~B; record bound reductions and actual droop reductions; run transients in VoltSpot v2.0 and compare droop envelopes and package sensitivity.
+\end{enumerate}
+
+\section{Discussion}
+\paragraph*{Why HB matters for IR} HB's low contact resistance and extreme vertical density reduce inter-die $R/L$, flatten vertical gradients, and offload TSV currents, thereby shrinking both terms in the E--R bound---the DC energy (by lowering path resistances) and effective resistances to the supply plane.
+
+\paragraph*{KOZ, spacing, and density}
+KOZ rules around TSVs (stress-induced mobility shifts) and min-spacing rules are enforced in our conflict graph. Modern processes can reduce KOZ significantly, but nonzero bounds remain and should be respected near sensitive analog/RF macros; HB density and keep-outs are captured by regional caps.
+
+\paragraph*{Transient safety}
+DC optimization is a strong first-order step; transient verification catches package resonances and localized high-$\mathrm{d}i/\mathrm{d}t$ events. Our post-pass adds small HB link clusters or re-allocates a few C4s near hotspots.
+
+\section{Limitations and Future Work}
+Our DC-bound guarantees are upper bounds on worst droop; they do not capture inductive resonances or vector-dependent simultaneous switching noise. Extending the convex stage with simple passivity-constrained RL surrogates is future work. Submodularity-like guarantees for greedy selection do not hold in general for total effective resistance minimization; however, empirical performance is strong, and monotone improvement is guaranteed by Rayleigh's law.
+
+\section{Conclusion}
+We presented a pre-RTL, HB+TSV co-design framework with provable worst-case IR-drop upper bounds, convex surrogates, and efficient adjoint-greedy rounding. The method integrates seamlessly with VoltSpot-style models, handles real DRC/KOZ/EM constraints, and scales to large candidate sets and scenario counts. By aligning optimization with physical E--R structure, we obtain both theoretical assurances and practical, reproducible workflows for HB-aware PDN co-design in heterogeneous 3D stacks.
+
+\section*{Acknowledgments}
+We thank the communities that released VoltSpot and related artifacts enabling pre-RTL PDN studies.
+
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{99}
+
+\bibitem{ZhangISCA2014}
+R. Zhang, K. Wang, B. H. Meyer, M. R. Stan, and K. Skadron, ``Architecture Implications of Pads as a Scarce Resource,'' in \emph{ISCA}, 2014. Available: \url{https://www.cs.virginia.edu/~skadron/Papers/zhang_pads_isca2014.pdf}.
+
+\bibitem{VoltSpot}
+VoltSpot project page, Univ. of Virginia, accessed 2025. \url{https://lava.cs.virginia.edu/VoltSpot/}.
+
+\bibitem{VoltSpotHOWTO}
+VoltSpot v2.0 HOWTO (3D support, steady-state/transient), accessed 2025. \url{https://lava.cs.virginia.edu/VoltSpot/howto.htm}.
+
+\bibitem{ZhangDAC2015}
+R. Zhang et al., ``A Cross-Layer Design Exploration of Charge-Recycled Power-Delivery in Many-Layer 3D-IC,'' in \emph{DAC}, 2015.
+
+\bibitem{ZhangISLPED2015}
+R. Zhang et al., ``Transient Voltage Noise in Charge-Recycled Power Delivery Networks for Many-Layer 3D-IC,'' in \emph{ISLPED}, 2015.
+
+\bibitem{WangPatent}
+K. Wang et al., ``Walking Pads: Fast Power-Supply Pad-Placement Optimization,'' US Patent 10,482,210, 2019.
+
+\bibitem{KimELEX2017}
+S. Kim and Y. Kim, ``Analysis and reduction of voltage noise of multi-layer 3D IC with multi-paired PDN,'' \emph{IEICE Electronics Express}, 2017.
+
+\bibitem{HossenBakir2020}
+M. O. Hossen et al., ``Design Space Exploration of Power Delivery For Advanced Packaging Technologies,'' arXiv:2008.03124, 2020.
+
+\bibitem{HBContact2022}
+J.-J. Ong et al., ``Low-Temperature Cu/SiO$_{2}$ Hybrid Bonding with Low Contact Resistance Using (111)-Oriented Cu,'' \emph{Materials}, 2022. (PMC8911830).
+
+\bibitem{IEEESpectrumHB}
+IEEE Spectrum, ``Hybrid Bonding: 3D Chip Tech to Save Moore’s Law,'' 2024.
+
+\bibitem{SonyECTC2024}
+Y. Ikegami et al., ``Study of Ultra Fine 0.4~$\mu$m Pitch Wafer-to-Wafer Hybrid Bonding and impact of bonding misalignment,'' \emph{ECTC}, 2024.
+
+\bibitem{SonyECTC2025}
+A. Urata et al., ``2.0-$\mu$m-pitch Cu--Cu Hybrid Bonding for Three-Layer 3D Heterogeneous Integration,'' \emph{ECTC}, 2025.
+
+\bibitem{TomHC33}
+Tom’s Hardware, Hot Chips coverage on AMD 3D V-Cache and $\sim 9\,\mu$m HB pitch, 2021--2022.
+
+\bibitem{TVLSIEMC4}
+R. Zhang et al., ``Tolerating the Consequences of Multiple EM-Induced C4 Bump Failures,'' \emph{IEEE TVLSI}, 2016.
+
+\bibitem{EMCuCu2021}
+Y.-H. Chen et al., ``Effect of Bonding Strength on EM Failure in Cu--Cu Bumps,'' \emph{Materials}, 2021.
+
+\bibitem{KOZPatent}
+US 9,054,166 and US 9,640,490, ``Through Silicon Via Keep Out Zone Formation Method and System,'' 2015/2017.
+
+\bibitem{GFNearZeroKOZ}
+Semiconductor Digest, ``Near-zero KOZ for TSV technology,'' 2013.
+
+\bibitem{LiASPDAC2012}
+Z. Li et al., ``Thermal-aware Power Network Design for IR Drop Reduction in 3D ICs,'' in \emph{ASP-DAC}, 2012.
+
+\bibitem{BoydGhoshER}
+A. Ghosh, S. Boyd, and A. Saberi, ``Minimizing Effective Resistance of a Graph,'' \emph{SIAM Review}, 2008.
+
+\bibitem{BoydICM06}
+S. Boyd, ``Convex Optimization of Graph Laplacian Eigenvalues,'' \emph{ICM}, 2006.
+
+\bibitem{MoskNP}
+D. Mosk-Aoyama, ``Maximum algebraic connectivity augmentation is NP-hard,'' \emph{Operations Research Letters}, 2008.
+
+\bibitem{Chan19ER}
+P. H. Chan et al., ``Network design for s--t effective resistance,'' arXiv:1904.03219, 2019.
+
+\bibitem{DoyleSnell}
+P. Doyle and J. Snell, \emph{Random Walks and Electric Networks}, MAA Carus Monographs, 1984.
+
+\bibitem{BoydVandenberghe}
+S. Boyd and L. Vandenberghe, \emph{Convex Optimization}, Cambridge Univ. Press, 2004.
+
+\bibitem{NesterovSmooth}
+Y. Nesterov, ``Smooth minimization of non-smooth functions,'' \emph{Math. Programming}, 2005.
+
+\bibitem{ShermanMorrison}
+W. J. Sherman and W. J. Morrison, ``Adjustment of an inverse matrix...,'' \emph{Annals of Mathematical Statistics}, 1949/1950.
+
+\end{thebibliography}
+
+\end{document}
+```
+ 
