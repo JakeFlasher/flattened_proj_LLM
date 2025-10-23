@@ -131,7 +131,7 @@
 % }
 
 % \markboth{IEEE Transactions on Parallel and Distributed Systems,~Vol.~xx, No.~xx, Month~Year}%
-% {VitaBeta: Transformer-Guided Trace Reduction for Architectural Simulation}
+ 
 
 % \IEEEtitleabstractindextext{%
 \begin{abstract}
@@ -155,9 +155,10 @@ On multi-core applications, we evaluate \name in gem5 full-system mode on seven 
 
 Cycle-accurate architectural simulation is indispensable for evaluating superscalar, out-of-order (OoO) cores, yet faithfully executing billions of dynamic instructions is prohibitively slow. Profile-driven \emph{region selection} mitigates cost by simulating representative program regions. Two widely used techniques are: (i) the \textbf{SimPoint method}~\cite{simpoint-asplos02,simpoint03,simpoint-howto}, which clusters Basic Block Vectors (BBVs) to select \emph{simulation points} (SPs) with weights; and (ii) \textbf{LoopPoint}~\cite{looppoint-hpca22}, which identifies loop-aligned regions and constructs micro-checkpoints with \emph{Region IDs} (RIDs). However, even \emph{inside} these representative regions we empirically observe long spans with stable microarchitectural behavior. Simulating all instructions in such spans expends budget with little effect on end metrics.
 
-This paper focuses on \emph{within-region} acceleration. Our goal is to prune stable spans while preserving compact instruction neighborhoods around \emph{phase transitions}—the boundaries where performance regimes change—so that end metrics (e.g., IPC, MPKI) remain faithful.
+This paper focuses on \emph{within-region} acceleration. Our  goal is to learn to prune stable spans while preserving compact instruction neighborhoods around \emph{phase transitions}—the boundaries where performance regimes change—so that end metrics (e.g., IPC, MPKI) remain faithful.
 
-Our thesis is to view the data we can measure during a single profiling pass as a \emph{lossy compression} of the instance-level dynamics we would ideally supervise. Specifically, throughput materializes at the granularity of \emph{retire groups}, so we treat retire-group observables (e.g., group IPC) as \emph{anchors}—aggregate summaries that compress per-instruction signals. We then \emph{decompress just enough} by learning a contiguous, per-instruction \emph{Phase-Transition Signal} (\pts) whose \emph{retire-group averages} match the anchors. This places our problem at the intersection of \emph{learning from aggregates} (LLP) and \emph{time-series imputation}: the group-average constraint supplies supervision without instance labels, while sequence modeling supplies context and denoising~\cite{yu2014-llp,scott2020-llp,law2018-agg,zhang2020-agg}.
+% Our thesis treats the challenge of supervision as a problem of signal decompression.
+Ideally, we would supervise a model on the precise performance impact of every instruction from the trace; however, such data is unattainable on modern out-of-order (OoO) cores. Instead, the profiling data we can collect is aggregated (e.g., grouped IPC from ROB buffer retirement). We therefore view these measurable, group-level statistics as a \emph{lossy compression} of the ideal, underlying per-instruction signals. Specifically, throughput materializes at the granularity of \emph{retire groups}, so we treat retire-group observables (e.g., group IPC) as \emph{anchors}—aggregate summaries that compress per-instruction signals. We then \emph{decompress just enough} by learning a contiguous, per-instruction \emph{Phase-Transition Signal} (\pts) whose \emph{retire-group averages} match the anchors. This places our problem at the intersection of \emph{learning from aggregates} (LLP) and \emph{time-series imputation}: the group-average constraint supplies supervision without instance labels, while sequence modeling supplies context and denoising~\cite{yu2014-llp,scott2020-llp,law2018-agg,zhang2020-agg}.
 
 Why a Transformer? We need a model that is simultaneously (i) an effective sequence imputer under masking, (ii) tolerant to noisy/partial signals, and (iii) able to leverage long-range context so that subtle, extended transitions are not fragmented. A bidirectional Transformer trained with masked-modeling losses naturally provides these properties and has become a strong default backbone for sequence reconstruction. We pair it with total-variation regularization to keep \pts\ contiguous and \emph{change-point detection} (\cpd) friendly.
 
@@ -289,16 +290,16 @@ We train with masked modeling and aggregate consistency. Concretely, the loss is
 \mathcal{L}_{\mathrm{AC}} &= \frac{1}{|T|}\sum_{k=1}^K |\mathcal{G}_k|\,\rho_\delta\!\big(\mu_k(s)-\tilde{r}_k\big)
 \quad\text{(aggregate consistency, Huber)}. \label{eq:ac}
 \end{align}
-To promote contiguity of \pts\ (for \cpd) and resolve affine ambiguity, we add
+To promote contiguity of \pts\ (for \cpd) and resolve affine ambiguity, we add 
 \begin{align}
-\mathcal{L}_{\mathrm{TV}} &= \frac{1}{|T|-1}\sum_{t=2}^{|T|} |s_t-s_{t-1}|,
-\qquad
-\mathcal{L}_{\mathrm{NORM}} = \big(\bar{s}\big)^2+\big(\Var(s)-1\big)^2, \nonumber
+\mathcal{L}_{\mathrm{TV}} &= \frac{1}{|T|-1}\sum_{t=2}^{|T|} |s_t-s_{t-1}|, \text{(total\ variation)}
+% \qquad
+% \mathcal{L}_{\mathrm{NORM}} = \big(\bar{s}\big)^2+\big(\Var(s)-1\big)^2, \nonumber
 \end{align}
 with \(\bar{s}=\tfrac{1}{|T|}\sum_{t=1}^{|T|} s_t\).
 The full objective is
 \begin{equation}
-\mathcal{L} =\mathcal{L}_{\mathrm{FR}} + \lambda\,\mathcal{L}_{\mathrm{MI}} + \gamma\,\mathcal{L}_{\mathrm{AC}} + \eta\,\mathcal{L}_{\mathrm{TV}} + \xi\,\mathcal{L}_{\mathrm{NORM}}. \label{eq:full}
+\mathcal{L} =\mathcal{L}_{\mathrm{FR}} + \lambda\,\mathcal{L}_{\mathrm{MI}} + \gamma\,\mathcal{L}_{\mathrm{AC}} +  \eta\,\mathcal{L}_{\mathrm{TV}}. \label{eq:full}
 \end{equation}
 
 \paragraph{Practicalities.}
