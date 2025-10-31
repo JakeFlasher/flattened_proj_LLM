@@ -18,8 +18,7 @@ Bias towards not asking the user for help if you can find the answer yourself.
 </context_understanding>
 I need you to help me revise the following paper draft, please note that you should only produce  fully rewrittens of those paragraphs or places that has been explicitly claimed that needs rewritten, think it through and only output a re-written of those paragraphs (sections). Thank you.
 
-```tex 
-% Please help me come up with a better title please, at least offer 10 candidates to choose from
+```tex  
 \begin{abstract}
 Trace‑driven simulation remains essential for architectural design‑space exploration, yet executing long traces on detailed out‑of‑order (OoO) cores is increasingly costly. We present \emph{\name}, a within‑region trace‑reduction framework that preserves short, high‑fidelity instruction neighborhoods around behavioral transitions while aggressively pruning microarchitecturally stable spans. The key idea is to learn a contiguous per‑instruction \emph{Phase‑Transition Surrogate} (\pts) whose retire‑group means are constrained to match a measured aggregate throughput anchor (e.g., IPC per ROB retire group). We train a bidirectional Transformer with a \emph{group‑average matching (GAM)} loss and a total‑variation prior; exact \pelt‑based change‑point detection with autoregressive segment costs then identifies boundaries that drive budget‑matched windowing. \name composes with SimPoint and LoopPoint and supports both application‑specific training and deployment with pre‑trained models. Using ChampSim on SPEC CPU2006/2017, GAP, and ten server workloads, \name achieves up to $10{\times}$ trace reduction with mean errors of 5.47\% (IPC), 4.01\% (cache miss), and 2.97\% (cache latency), yielding a $9.23{\times}$ end‑to‑end speedup over plain SimPoint when using a pre‑trained Transformer. Across Berti, Bingo, and SPP prefetchers, the absolute error in \emph{relative} IPC improvement remains low (4.05\% at $4{\times}$ and 5.79\% at $10{\times}$ reduction), preserving prefetcher ranking. On multi‑core applications, we evaluate \name in gem5 full‑system mode on seven NAS Parallel Benchmarks: starting from LoopPoint checkpoints, \name delivers an additional $5.6{\times}$ speedup while maintaining IPC, cache‑miss, and cache‑latency errors of 9.6\%, 16.3\%, and 8.3\%, respectively, relative to unsampled detailed simulation. These results demonstrate that an aggregate‑anchored, phase‑transition surrogate is an effective and principled driver for fine‑grained trace pruning.
 \end{abstract}
@@ -275,7 +274,7 @@ At inference time, masks are removed; the network emits only \(s_t\). Figure~\re
 \subsection{Change‑Point Detection on \pts}
 We run exact \pelt\ for \cpd\ over the scalar series \(\{s_t\}\). Segment costs use an autoregressive (AR) residual model to avoid over‑segmentation on slowly drifting regions; we found AR(1) sufficient in practice. A BIC‑style penalty controls the trade‑off between fidelity and parsimony and provides a single knob that is stable across suites. The result is an ordered set of boundaries \(\mathcal{B}=\{b_1<b_2<\cdots<b_m\}\) that mark statistically significant regime changes in microarchitectural responsiveness.
 % Paper editing starts
-% # Please revise the algorithm table to fit the contents in \subsection{Budget-Matched Window Selection and Mergin}
+% # Please revise the algorithm table to fit the contents in \subsection{Budget-Matched Window Selection and Merging}
 \begin{algorithm}[t]
 \caption{Adaptive Windowing for Budget-Matching}
 \label{alg:adaptive}
@@ -300,7 +299,7 @@ We run exact \pelt\ for \cpd\ over the scalar series \(\{s_t\}\). Segment costs 
 \end{algorithmic}
 \end{algorithm}
 % Paper editing ends
-\subsection{Budget‑Matched Window Selection and Merging}
+\subsection{Budget-Matched Window Selection and Merging}
 As illustrated in Algorithm~\ref{alg:adaptive}, let \(L=|T|\) be region length and let the user specify a target reduction \(\rho\!\ge\!1\) (e.g., \(\rho\!=\!4\) means keeping roughly \(L/\rho\) instructions). We compute a keep budget \(B=\lfloor L/\rho \rfloor\). Around each boundary \(b\in\mathcal{B}\), we place a symmetric window with a half‑width that scales with local contrast:
 \[
 \Delta_b=\big|\,s_{b^+}-s_{b^-}\,\big|,\qquad
