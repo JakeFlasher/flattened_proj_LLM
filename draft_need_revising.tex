@@ -18,21 +18,13 @@ Bias towards not asking the user for help if you can find the answer yourself.
 </context_understanding>
 I need you to help me revise the following paper draft, please note that you should only produce  fully rewrittens of those paragraphs or places that has been explicitly claimed that needs rewritten, think it through and only output a re-written of those paragraphs (sections). Thank you.
 
-```tex
-% Please help me come up with an approapriate title
-% Please help me revise and improve the abstract, or render a complete and comprehensive rewritten of the abstract if necessary
+```tex 
+% Please help me come up with a better title please, at least offer 10 candidates to choose from
 \begin{abstract}
-Trace-driven simulation is central to architectural design space exploration, yet simulating long traces on detailed out-of-order (OoO) cores is increasingly expensive. We present \emph{\name}, a trace-reduction framework that accelerates simulation by preserving short, high-fidelity instruction neighborhoods around behavioral transitions, while pruning microarchitecturally stable spans.
-
-\name makes a deliberate modeling choice: it learns a contiguous, per-instruction \emph{Phase-Transition Surrogates}  (\pts) whose \emph{group averages} in terms of ROB buffer retirement are constrained to match a \emph{group-level throughput target} (''anchor signal''), \eg instructions-per-cycle (IPC) measured per ROB retire group. We train a Transformer using a \emph{group-average matching (GAM) loss}: the mean \pts within each observed retire group equals the standardized group throughput. Robust change-point detection (\cpd) on \pts (exact \pelt with autoregressive segment cost) yields boundaries that guide which neighborhoods to keep and which spans to prune.
-
-\name composes with SimPoint and LoopPoint and supports application-specific training as well as deployment with pre-trained models. Using ChampSim on SPEC CPU2006/2017, GAP, and ten server workloads, \name achieves up to $10{\times}$ trace reduction with mean errors of 5.47\% (IPC), 4.01\% (cache miss), and 2.97\% (cache latency), and delivers a $9.23{\times}$ end-to-end speedup over plain SimPoint when using a pre-trained Transformer. Across Berti, Bingo, and SPP prefetchers, the absolute error in \emph{relative} IPC improvement remains low (4.05\% at $4{\times}$ and 5.79\% at $10{\times}$ reduction), preserving prefetcher ranking.
-
-On multi-core applications, we evaluate \name in gem5 full-system mode on seven NAS Parallel Benchmarks. Starting from LoopPoint checkpoints, \name yields an additional $5.6{\times}$ speedup while maintaining IPC, cache-miss, and cache-latency errors of 9.6\%, 16.3\%, and 8.3\%, respectively, relative to unsampled detailed simulation. These results indicate that a learned, aggregate-anchored, phase-transition surrogate is an effective and principled driver for fine-grained trace pruning.
+Trace‑driven simulation remains essential for architectural design‑space exploration, yet executing long traces on detailed out‑of‑order (OoO) cores is increasingly costly. We present \emph{\name}, a within‑region trace‑reduction framework that preserves short, high‑fidelity instruction neighborhoods around behavioral transitions while aggressively pruning microarchitecturally stable spans. The key idea is to learn a contiguous per‑instruction \emph{Phase‑Transition Surrogate} (\pts) whose retire‑group means are constrained to match a measured aggregate throughput anchor (e.g., IPC per ROB retire group). We train a bidirectional Transformer with a \emph{group‑average matching (GAM)} loss and a total‑variation prior; exact \pelt‑based change‑point detection with autoregressive segment costs then identifies boundaries that drive budget‑matched windowing. \name composes with SimPoint and LoopPoint and supports both application‑specific training and deployment with pre‑trained models. Using ChampSim on SPEC CPU2006/2017, GAP, and ten server workloads, \name achieves up to $10{\times}$ trace reduction with mean errors of 5.47\% (IPC), 4.01\% (cache miss), and 2.97\% (cache latency), yielding a $9.23{\times}$ end‑to‑end speedup over plain SimPoint when using a pre‑trained Transformer. Across Berti, Bingo, and SPP prefetchers, the absolute error in \emph{relative} IPC improvement remains low (4.05\% at $4{\times}$ and 5.79\% at $10{\times}$ reduction), preserving prefetcher ranking. On multi‑core applications, we evaluate \name in gem5 full‑system mode on seven NAS Parallel Benchmarks: starting from LoopPoint checkpoints, \name delivers an additional $5.6{\times}$ speedup while maintaining IPC, cache‑miss, and cache‑latency errors of 9.6\%, 16.3\%, and 8.3\%, respectively, relative to unsampled detailed simulation. These results demonstrate that an aggregate‑anchored, phase‑transition surrogate is an effective and principled driver for fine‑grained trace pruning.
 \end{abstract}
-% \begin{IEEEkeywords}
-\textbf{Keywords: }Trace-based simulation, workload characterization, simulation speedup, multicore systems, Transformers
-% \end{IEEEkeywords}
+\begin{IEEEkeywords}Trace-based simulation, workload characterization, simulation speedup, multicore systems, Transformers
+\end{IEEEkeywords}
 % }
 
 \maketitle
@@ -82,7 +74,7 @@ Region-level resampling selects different minor macroscopic points but still sim
     \captionsetup[subfigure]{font=footnotesize, skip=1pt}
     \includegraphics[width=0.99\linewidth]{images/resimpoint.pdf}
     \caption{Re-SimPoint baseline versus SimPoint+\name\ on GAP Benchmark Suite (single core), matched at 2$\times$, 4$\times$, and 10$\times$ trace-length reductions.  Under equal reduction, \name\ concentrates the budget near phase boundaries and achieves higher speedups with lower IPC error than re-sampled coarse trace regions.}
-    \label{fig:benchmarks}
+    \label{fig:re-simpoint}
 \end{figure}
 
 \subsection*{Trace Pruning Using Analytical Methods}
@@ -151,7 +143,7 @@ VitaBeta learns a \emph{per-instruction Phase-Transition Surrogates (PTS)} that 
 %                   V
 %               [ IPC_k ]                           [ IPC_{k+1} ]    <- Aggregate "anchor" signal
  
-    \label{fig:benchmarks}
+    \label{fig:conceptual}
 \end{figure}
 % =====================================================================
 % Methodology
@@ -198,15 +190,16 @@ In summary, VitaBeta advances trace reduction by (i) introducing an aggregate-co
 % \section{Motivation}
 
  
-\section{Methodology}\label{sec:methodology}
-We operate strictly within representative regions selected upstream by SimPoint or LoopPoint; our method neither changes which regions are chosen nor their weights. Given a region’s dynamic instruction stream, as illustrated in Figure~\ref{overview}, our pipeline consists the following:
-
 \begin{figure}[!htbp]
+\label{fig:overview}
     \centering
     \includegraphics[width=0.99\linewidth]{images/workflow.pdf}
     \caption{Overview of VitaBeta.}
     \label{fig:placeholder}
 \end{figure}
+\section{Methodology}\label{sec:methodology}
+We operate strictly within representative regions selected upstream by SimPoint or LoopPoint; our method neither changes which regions are chosen nor their weights. Given a region’s dynamic instruction stream, as illustrated in Figure~\ref{fig:overview}, our pipeline consists the following:
+
 \begin{itemize}
     \item learns a contiguous per‑instruction Phase‑Transition Signal (\pts) from a single profiling pass by matching retire‑group averages to standardized throughput anchors;
     \item runs principled change‑point detection (\cpd) on \pts to delineate short neighborhoods that capture behavioral transitions; and
@@ -233,20 +226,21 @@ where \(\mathcal{W}(t)\) is a context window (dilated or sliding). Crucially, \(
 \label{eq:group-avg}
 \end{equation}
 
-Training uses three complementary signals: feature reconstruction on observed entries (FR), masked imputation on artificially hidden entries (MI), and aggregate consistency (AC) to enforce \eqref{eq:group-avg}. A total‑variation prior (TV) encourages contiguity so that \cpd\ yields stable segments. With Huber loss \(\rho_\delta(\cdot)\) for robustness on AC, the objective is
-\[
-\mathcal{L}_{\mathrm{FR}}=\frac{\sum_{t,d}M_t^{(d)}\,\ell_d(\tilde{u}_t^{(d)},u_t^{(d)})}{\sum_{t,d}M_t^{(d)}},\quad
-\mathcal{L}_{\mathrm{MI}}=\frac{\sum_{t,d}I_t^{(d)}\,\ell_d(\tilde{u}_t^{(d)},u_t^{(d)})}{\sum_{t,d}I_t^{(d)}},
-\]
-\[
-\mathcal{L}_{\mathrm{AC}}=\frac{1}{|T|}\sum_{k=1}^K |\mathcal{G}_k|\,\rho_\delta\!\big(\mu_k(s)-\tilde{r}_k\big),\qquad
-\mathcal{L}_{\mathrm{TV}}=\frac{1}{|T|-1}\sum_{t=2}^{|T|} |s_t-s_{t-1}|,
-\]
+Training uses three complementary signals: feature reconstruction on observed entries (FR), masked imputation on artificially hidden entries (MI), and aggregate consistency (AC) to enforce \eqref{eq:group-avg}. A total‑variation prior (TV) encourages contiguity so that \cpd\ yields stable segments. With Huber loss \(\rho_\delta(\cdot)\) for robustness on AC, the objective is 
+{
+\footnotesize 
+\begin{align}
+\mathcal{L}_{\mathrm{FR}} &= \frac{\sum_{t,d}M_t^{(d)}\,\ell_d(\tilde{u}_t^{(d)},u_t^{(d)})}{\sum_{t,d}M_t^{(d)}}, 
+\mathcal{L}_{\mathrm{MI}} = \frac{\sum_{t,d}I_t^{(d)}\,\ell_d(\tilde{u}_t^{(d)},u_t^{(d)})}{\sum_{t,d}I_t^{(d)}}, \\
+\mathcal{L}_{\mathrm{AC}} &= \frac{1}{|T|}\sum_{k=1}^K |\mathcal{G}_k|\,\rho_\delta\!\big(\mu_k(s)-\tilde{r}_k\big), 
+\mathcal{L}_{\mathrm{TV}} = \frac{1}{|T|-1}\sum_{t=2}^{|T|} |s_t-s_{t-1}|. 
+\end{align} 
+\normalsize
+}
 and the total loss is
-\[
+\begin{equation}
 \mathcal{L}=\mathcal{L}_{\mathrm{FR}}+\mathcal{L}_{\mathrm{MI}}+\lambda_{\mathrm{AC}}\mathcal{L}_{\mathrm{AC}}+\lambda_{\mathrm{TV}}\mathcal{L}_{\mathrm{TV}}.
-\]
-
+\end{equation}
 \textbf{Affine identifiability.} Matching only means leaves \(s_t\) undetermined up to an affine transform, but standardizing anchors and pinning moments resolves this in practice. Concretely, minimizing \(\mathcal{L}\) with standardized \(\tilde{r}_k\) and either (i) an implicit TV‑based scale via \(\lambda_{\mathrm{TV}}\) or (ii) an explicit moment pinning term that drives \(\bar{s}\!\triangleq\!\tfrac{1}{|T|}\sum_ts_t\!\to\!0\) and \(\mathrm{Var}(s)\!\to\!1\) yields a surrogate that is unique up to negligible numerical tolerance and stable across runs. This makes contrasts and segment costs comparable across regions without per‑region tuning.
 
 At inference time, masks are removed; the network emits only \(s_t\). Figure~\ref{fig:saits} illustrates the flow on a toy example (Table~\ref{tab:example}): partial masking supports MI/FR while \(\mathcal{L}_{\mathrm{AC}}\) ties the per‑instruction surrogate back to the measured retire‑group anchors.
@@ -280,9 +274,34 @@ At inference time, masks are removed; the network emits only \(s_t\). Figure~\re
 
 \subsection{Change‑Point Detection on \pts}
 We run exact \pelt\ for \cpd\ over the scalar series \(\{s_t\}\). Segment costs use an autoregressive (AR) residual model to avoid over‑segmentation on slowly drifting regions; we found AR(1) sufficient in practice. A BIC‑style penalty controls the trade‑off between fidelity and parsimony and provides a single knob that is stable across suites. The result is an ordered set of boundaries \(\mathcal{B}=\{b_1<b_2<\cdots<b_m\}\) that mark statistically significant regime changes in microarchitectural responsiveness.
-
+% Paper editing starts
+% # Please revise the algorithm table to fit the contents in \subsection{Budget-Matched Window Selection and Mergin}
+\begin{algorithm}[t]
+\caption{Adaptive Windowing for Budget-Matching}
+\label{alg:adaptive}
+\small
+\begin{algorithmic}[1]
+\Require Change points \(\mathcal{C}\), total length \(|T|\), target reduction \(r\), tolerance \(\epsilon\)
+\State \(D\gets \lfloor |T|\,(1-r)\rfloor\); \(W_{\min}\gets 1\); \(W_{\max}\gets |T|\); \(\mathcal{M}^\star\gets\varnothing\); \(P^\star\gets 0\)
+\Function{MakeWindow}{$c,W$}
+  \State \(\Delta_L\gets\lfloor(W-1)/2\rfloor\), \(\Delta_R\gets W-1-\Delta_L\)
+  \State \(s\gets\max(1,c-\Delta_L)\); \(e\gets\min(|T|,c+\Delta_R)\)
+  \State \Return \([s,e]\)
+\EndFunction
+\While{\(W_{\min}\le W_{\max}\)}
+  \State \(W\gets\lfloor(W_{\min}+W_{\max})/2\rfloor\)
+  \State \(\mathcal{R}\gets \{\textsc{MakeWindow}(c,W):c\in\mathcal{C}\}\); \(\mathcal{M}\gets \textsc{MergeOverlaps}(\mathcal{R})\)
+  \State \(P\gets\sum_{[s,e]\in\mathcal{M}}(e-s+1)\)
+  \If{\(|P-D|<|P^\star-D|\)} \(\mathcal{M}^\star\gets\mathcal{M};\ P^\star\gets P\) \EndIf
+  \If{\(|P-D|\le D\epsilon\)} \Return \(\mathcal{M}\) \EndIf
+  \If{\(P < D\)} \State \(W_{\min}\gets W+1\) \Else \State \(W_{\max}\gets W-1\) \EndIf
+\EndWhile
+\State \Return \(\mathcal{M}^\star\) \Comment{Best-effort if tolerance unmet}
+\end{algorithmic}
+\end{algorithm}
+% Paper editing ends
 \subsection{Budget‑Matched Window Selection and Merging}
-Let \(L=|T|\) be region length and let the user specify a target reduction \(\rho\!\ge\!1\) (e.g., \(\rho\!=\!4\) means keeping roughly \(L/\rho\) instructions). We compute a keep budget \(B=\lfloor L/\rho \rfloor\). Around each boundary \(b\in\mathcal{B}\), we place a symmetric window with a half‑width that scales with local contrast:
+As illustrated in Algorithm~\ref{alg:adaptive}, let \(L=|T|\) be region length and let the user specify a target reduction \(\rho\!\ge\!1\) (e.g., \(\rho\!=\!4\) means keeping roughly \(L/\rho\) instructions). We compute a keep budget \(B=\lfloor L/\rho \rfloor\). Around each boundary \(b\in\mathcal{B}\), we place a symmetric window with a half‑width that scales with local contrast:
 \[
 \Delta_b=\big|\,s_{b^+}-s_{b^-}\,\big|,\qquad
 w_b = w_{\min} + \alpha\cdot \Delta_b,
@@ -296,6 +315,7 @@ where \(s_{b^-}\) and \(s_{b^+}\) are robust pre/post means from small guard ban
 3) compute the union length \(U\). If \(U>B\), shrink all \(w_b\) by a common factor found by bisection so that the merged union meets \(B\) within a small tolerance; if \(U<B\), expand by the same procedure but clamp at segment edges.
 
 This yields a unique, reproducible keep‑list that concentrates budget near the most consequential regime changes while guaranteeing the requested reduction.
+
 
 \subsection{Learning‑Free Fallback}\label{subsec:beta}
 When training is undesirable (e.g., new ISA, privacy constraints), we provide a contiguous, phase‑sensitive surrogate without learning. We repeat each standardized anchor \(\tilde{r}_{g(t)}\) over its retire group to obtain a stepwise series and solve a 1‑D TV denoising problem
