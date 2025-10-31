@@ -17,141 +17,10 @@ If you've performed an edit that may partially fulfill the USER's query, but you
 Bias towards not asking the user for help if you can find the answer yourself.
 </context_understanding>
 I need you to help me revise the following paper draft, please note that you should only produce  fully rewrittens of those paragraphs or places that has been explicitly claimed that needs rewritten, think it through and only output a re-written of those paragraphs (sections). Thank you.
+
  
 
-\documentclass[conference]{IEEEtran}
-\usepackage{bm}
-\usepackage{enumitem}
-\usepackage{adjustbox}
-\usepackage{tabularx, threeparttable}
-\usepackage{booktabs}
-\usepackage{placeins}
-  \setlength\heavyrulewidth{0.20ex}
-  \setlength\cmidrulewidth{0.10ex}
-  \setlength\lightrulewidth{0.10ex}
-\let\Bbbk\relax
-\usepackage{amssymb}
-\usepackage{fancyvrb}
-\usepackage{soul}
-\usepackage{amsmath,amsfonts}
-\usepackage{algorithmicx}
-\usepackage{graphicx}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
-\usepackage{textcomp}
-\usepackage{mathtools}
-\usepackage[nocompress]{cite}
-\usepackage{siunitx}
-\usepackage{multirow}
-\usepackage{url}
-\usepackage{colortbl}
-\usepackage{color}
-\usepackage{siunitx}
-\sisetup{
-  detect-weight = true,
-  detect-family = true,
-  separate-uncertainty = true,
-  table-number-alignment = center,
-  table-align-text-post = false
-}
-\newcommand{\best}[1]{{\bfseries #1}}
-\usepackage{caption} 
-\captionsetup{font=small}
-\captionsetup{skip=0pt}
-\usepackage[table]{xcolor}  
-% \usepackage[framemethod=tikz]{mdframed} 
-\usepackage{subcaption}
-\usepackage{xcolor} 
-\renewcommand*\thefootnote{\arabic{footnote}}
-\colorlet{shadecolor}{blue!20}
-\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
-    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
-% \sisetup{
-%     output-decimal-marker = {.},  
-%     table-format=2.3,             
-%     table-space-text-post = \, \%  
-% }
-\definecolor{baselinecolor}{gray}{0.9} 
-\definecolor{highlightcolor}{RGB}{200, 230, 201} 
-\definecolor{revision}{RGB}{187,222,251} 
-\newcommand{\hlc}[2][yellow]{{%
-    \colorlet{foo}{#1}%
-    \sethlcolor{foo}{#2}}%
-}
-
-% newcommand{\ie}{i.e.,\ }
-\newcommand{\eg}{e.g.,\ }
-\newcommand{\etal}{et al.\ }
-\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
-\newcommand{\abs}[1]{\left| #1 \right|}
-\newcommand{\E}{\mathbb{E}}
-\newcommand{\Var}{\mathrm{Var}}
-\newcommand{\TV}{\mathrm{TV}}
-
-
-% --- Macros ---
-\newcommand{\name}{VitaBeta }
-\newcommand{\pts}{\textsc{PTS} }
-\newcommand{\gam}{\textsc{GAM} }
-\newcommand{\cpd}{\textsc{CPD} }
-\newcommand{\pelt}{\textsc{PELT} }
-% \newcommand{\ie}{i.e.,\xspace}
-% \newcommand{\eg}{e.g.,\xspace}
-% \newcommand{\etal}{et~al.\xspace}
-
-% To avoid symbol collisions
-\newcommand{\parorder}{p_{\text{AR}}} % AR order
-\newcommand{\penBIC}{\beta_{\text{cpd}}} % PELT penalty (BIC-style)
-\newcommand{\budget}{B} % preserved-instruction budget
-
-\newcommand{\tb}[1]{\textbf{#1}}
-\newcommand{\todo}[1]{\textcolor{red}{\textbf{Todo:} #1}}
-\newcommand{\hd}[2]{\textcolor[rgb]{1.0,0.0,0.0}{hd:\st{#1} {#2}}}
-\newcommand{\MS}[1]{\textcolor{teal}{\textbf{MS:} #1}}
-% \sethlcolor{revision!40}
-% \soulregister\cite1
-% % You might also need to register other commands you use inside \hl
-% \soulregister\emph1
-% \soulregister\textit1
-% \soulregister\textbf1 
-\begin{document}
-
-% Ensure letter paper
-\pdfpagewidth=8.5in
-\pdfpageheight=11in
-
-%%%%%%%%%%%---SETME-----%%%%%%%%%%%%%
-\newcommand{\iscasubmissionnumber}{NaN}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\pagenumbering{arabic}
-
-%%%%%%%%%%%---SETME-----%%%%%%%%%%%%%
-\title{Guidelines for Submission to ISCA 2026}
-\author{\normalsize{ISCA 2026 Submission
-    \textbf{\#\iscasubmissionnumber} -- Confidential Draft -- Do NOT Distribute!!}}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-\maketitle
-\thispagestyle{plain}
-\pagestyle{plain}
-
-% \title{Learning Phase-Transition Signals with Group-Average Matching for Fine-Grained Trace Pruning}
-
-% \author{Chengao~Shi,
-%         Zhenguo~Liu,~\IEEEmembership{Student Member,~IEEE,}
-%         Chen~Ding,~\IEEEmembership{Member,~IEEE,}
-%         and~Jiang~Xu,~\IEEEmembership{Member,~IEEE}%
-% \IEEEcompsocitemizethanks{
-%     \IEEEcompsocthanksitem Chengao Shi is with the Department of Electronic and Computer Engineering, The Hong Kong University of Science and Technology. E-mail: \{cshiai\}@connect.ust.hk.
-%     \IEEEcompsocthanksitem Zhenguo Liu and Jiang Xu are with Microelectronics Thrust, The Hong Kong University of Science and Technology (Guangzhou). E-mail: \{zliu094, jiang.xu\}@hkust-gz.edu.cn.
-%     \IEEEcompsocthanksitem Chen Ding is with the Department of Computer Science, University of Rochester. E-mail: cding@cs.rochester.edu.}%
-% }
-
-% \markboth{IEEE Transactions on Parallel and Distributed Systems,~Vol.~xx, No.~xx, Month~Year}%
- 
-
+```tex
 % \IEEEtitleabstractindextext{%
 \begin{abstract}
 Trace-driven simulation is central to architectural design space exploration, yet simulating long traces on detailed out-of-order (OoO) cores is increasingly expensive. We present \emph{\name}, a trace-reduction framework that accelerates simulation by preserving short, high-fidelity instruction neighborhoods around behavioral transitions, while pruning microarchitecturally stable spans.
@@ -314,12 +183,12 @@ Statistical simulation replaces long detailed runs with synthetic traces or buil
 \name differs by never generating synthetic program traces: it keeps real instructions near transitions and prunes stable spans.
 
 \subsection{Microarchitectural Metrics}
-Locality analysis (e.g., reuse/stack distance) provides powerful summaries of temporal reuse~\cite{mattson1970,benkruskal1975}. Such metrics underpin a broad literature in cache modeling and can help detect regions with limited sensitivity to cache size or replacement. Related to exploiting redundancy, recent microarchitectural proposals identify \emph{likely-stable loads} and eliminate their execution under safety conditions (e.g., Constable)~\cite{constable}. While such mechanisms reduce work during hardware execution, their direct use as pruning rules in trace-driven simulation is brittle: a single instruction-level heuristic rarely correlates with full pipeline and memory-system responses across diverse contexts. 
+Locality analysis (e.g., reuse/stack distance) provides powerful summaries of temporal reuse~\cite{mattson70, locality_theory}. Such metrics underpin a broad literature in cache modeling and can help detect regions with limited sensitivity to cache size or replacement. Related to exploiting redundancy, recent microarchitectural proposals identify \emph{likely-stable loads} and eliminate their execution under safety conditions (e.g., Constable)~\cite{constable}. While such mechanisms reduce work during hardware execution, their direct use as pruning rules in trace-driven simulation is brittle: a single instruction-level heuristic rarely correlates with full pipeline and memory-system responses across diverse contexts. 
 % This informs redundancy in existing traces but does not directly drive simulation acceleration across diverse pipelines.
 % Our preliminary study (Section~\ref{sec:intuition}) shows that standalone heuristics (stable-loads, reuse-distance and footprint filters) are either accurate but low-gain or higher-gain but error-prone. VitaBeta instead seeks a \emph{phase-sensitive} driver that is contiguous in instruction order and anchored to measured performance statistics.
 
 \subsection{Machine Learning for Computer Architecture}
-Machine learning has impacted several architectural problems. Neural and RL-based prefetchers model address sequences or decision policies (e.g., Learning Memory Access Patterns~\cite{hashemi2018learning}, Voyager~\cite{voyager-asplos21} and production-grade designs such as SPP~\cite{spp-micro16}, Bingo~\cite{bingo-hpca19}, and Berti~\cite{berti-micro22}). Separately, Ithemal learns basic-block throughput directly from instructions, outperforming analytical models in throughput estimation~\cite{pmlr-v97-mendis19a}. 
+Machine learning has impacted several architectural problems. Neural and RL-based prefetchers model address sequences or decision policies (e.g., Learning Memory Access Patterns~\cite{hashemi2018learning}, Voyager~\cite{voyager} and production-grade designs such as SPP~\cite{spp-micro16}, Bingo~\cite{bingo-hpca19}, and Berti~\cite{berti-micro22}). Separately, Ithemal learns basic-block throughput directly from instructions, outperforming analytical models in throughput estimation~\cite{mendelson1997speculative}. 
 On the other hand, methods like TransFetch~\cite{transfetch} and Pythia~\cite{pythia21} apply attention-based networks and reinforcement learning, respectively, to generate more accurate memory prefetch requests. Recent work~\cite{mine} investigates the use of large language models for memory trace synthesis.
 Our training objective for \pts connects to learning-from-aggregates: LLP and related frameworks learn instance-level predictors from bag-level labels or means~\cite{yu2014-llp,scott2020-llp,law2018-agg,zhang2020-agg}. Here, \emph{retire groups} are bags and group throughput is the regression target.
  
@@ -334,11 +203,13 @@ In summary, VitaBeta advances trace reduction by (i) introducing an aggregate-co
 
 
 
+% ### paper edit starts
+% The whole section of Methodology needs a complete, comprehensive and careful rewritten so that the reviewers from top-tier conferences like ISCA, HPCA and MICRO can understand it. You also need to check for any incomplete logic chains, weak mathematical deduction and faulty mathematical formulations, make sure no problem occurs here. I have also appended a historic draft version of this section at the end. 
 \section{Methodology}
 \label{sec:methodology}
 
 We operate strictly \emph{within} representative regions chosen by SimPoint/LoopPoint. For each region we (1) learn a contiguous per-instruction \emph{Phase-Transition Signal} (\pts) by matching retire-group averages to standardized anchors (single profiling pass), (2) detect change points (\cpd) on \pts\ with exact \pelt, and (3) preserve compact neighborhoods around these boundaries to match a user-specified reduction budget. Upstream region selection and weights remain unchanged.
-
+% #  \emph{Abbreviations:} FR—feature reconstruction, MI—masked imputation, GAM—group‑average matching, \pts—Phase‑Transition Surrogate, \cpd—change‑point detection.
 \subsection{Data, Anchors, and Notation}
 Let the dynamic instruction indices in a region be \(T=\{1,\ldots,|T|\}\). Each instruction \(t\) has a feature vector \(u_t\in\mathbb{R}^{D_f}\) (e.g., PC, opcode, address abstractions, locality summaries). The simulator partitions the stream into \emph{retire groups} \(\{\mathcal{G}_k\}_{k=1}^K\) at ROB emission; the mapping \(g(t)=k\) associates instruction \(t\) with its retire group. From a single profiling pass, we observe a \emph{group-level anchor} \(r_k\) (e.g., IPC for group \(k\)). We standardize anchors per stream:
 \[
@@ -357,11 +228,8 @@ where \(\mathcal{W}(t)\) is a local or dilated context and \(\mathrm{PE}(t)\) po
 \end{equation}
 Intuitively, \(s_t\) is \emph{not} “instruction-level IPC”; it is a contiguous surrogate whose retire-group mean equals the standardized throughput anchor.
 
-% ### paper edit starts
-% The following sentence does not contain any useful information, please revise it.
-Figure~\ref{fig:saits} provides a concrete example illustrating the training process using the data from Table~\ref{tab:example}.
+Figure~\ref{fig:saits} instantiates the training pipeline on the toy dataset in Table~\ref{tab:example}: instruction features \(u_t\) are partially masked for MI while observed entries drive FR; the imputer predicts reconstructed features \(\tilde{u}_t\) and a per‑instruction surrogate \(s_t\); finally, \gam enforces \(\mu_k(s)=\tilde{r}_k\) within each retire group \(\mathcal{G}_k\) as in \eqref{eq:group-avg}.
 
-% ### paper edit ends
 \begin{table}[!htbp]
 \centering
 \small
@@ -385,10 +253,7 @@ Figure~\ref{fig:saits} provides a concrete example illustrating the training pro
 \begin{figure*}[!htbp]
 \centering
 \includegraphics[width=0.99\linewidth]{images/ort_mit2.pdf}
-% ### paper edit starts
-% the following caption is useless and does not contain useful information, please revise it
-\caption{Training schematic: feature masking (FR/MI) for PTS prediction.  }
-% ### paper edit ends
+\caption{End‑to‑end training flow used in \name. Inputs are instruction features \(u_t\) and retire‑group anchors \(r_k\) from a single profiling pass. During training we (i) randomly mask feature subsets (MI) while retaining others (FR), (ii) use a bidirectional Transformer to reconstruct \(\tilde{u}_t\) and predict a contiguous per‑instruction Phase‑Transition Surrogate \(s_t\), and (iii) enforce group‑average matching (GAM) so that the within‑group mean \(\mu_k(s)\) equals the standardized anchor \(\tilde{r}_k\). A total‑variation prior encourages piecewise smooth \(s_t\). At inference, masks are removed and only \(s_t\) is emitted; in the downstream pipeline, \(s_t\) is passed to \cpd\ to locate compact phase boundaries for budgeted pruning. }
 \label{fig:saits}
 \end{figure*}
 
@@ -882,7 +747,7 @@ Multi-threaded traces introduce cross-core interference and barrier-aligned patt
 \section{Limitations and Threats to Validity}
 \label{sec:limitations}
 % ### paper edit starts
-% Please provide a rewritten of the conclusion, the current one is not informative enough for top-tier conferences like ISCA, HPCA and MICRO 
+% Please provide a rewritten of the limitation after a carefuly, thorough reading of the original manuscript, and deep thinking, the current one is not informative enough for top-tier conferences like ISCA, HPCA and MICRO 
 \textbf{Scope of the surrogate.} PTS is a learned surrogate constrained by group-level anchors; if anchors are noisy or biased by the profiling setup (e.g., prefetchers disabled), PTS may inherit these biases. 
 
 \textbf{Generalization.} Pre-trained models generalize across evaluated suites and three prefetchers, but cross-\emph{microarchitecture} generalization is not guaranteed; re-profiling and light fine-tuning may be required when pipeline widths, cache hierarchies, or memory systems differ substantially. 
@@ -894,23 +759,262 @@ Multi-threaded traces introduce cross-core interference and barrier-aligned patt
 \textbf{Multicore synchronization.} For multi-threaded workloads, barriers and lock-intensive regions are sensitive to pruning. We mitigate this with sync guards; more principled co-run PTS features are left for future work.
 
 % ### paper edit ends
-\section{Conclusion}
-\label{summary}
-% ### paper edit starts
-% Please provide a rewritten of the conclusion, the current one is not informative enough for top-tier conferences like ISCA, HPCA and MICRO 
-We introduced \emph{VitaBeta}, a Transformer-guided trace reduction framework that learns a \emph{per-instruction Phase-Transition Surrogates} (PTS) under aggregate-consistency constraints. VitaBeta does not assume well-defined instruction-level IPC; instead, it anchors a contiguous surrogate to observed group-level throughput and uses CPD to preserve compact, phase-defining segments.
+\section{Conclusion} \label{summary}
+We presented \name, a within‑region trace‑reduction framework that learns a contiguous per‑instruction \pts anchored by retire‑group throughput and uses principled \cpd\ with budgeted windowing to preserve only compact, phase‑defining neighborhoods. This aggregate‑consistent surrogate avoids ill‑posed instruction‑level “IPC” targets while remaining faithful to the measurable statistics that modern OoO cores expose, and composes cleanly with SimPoint and LoopPoint without altering their region selections or weights. A learning‑free fallback (\S\ref{subsec:beta}) enables deployment even when training is infeasible.
 
-On SPEC, GAP, and server workloads, VitaBeta delivers $2$–$4\times$ speedups with $\le$5\% IPC error, and up to $10\times$ reduction with modest error growth, preserving prefetcher-relative conclusions. On multi-core, VitaBeta compounds LoopPoint’s speedups by $5.6\times$ at moderate accuracy loss, demonstrating orthogonality to region-level sampling.
+Comprehensive evaluation on SPEC CPU2006/2017, GAP, and ten server workloads shows that \name achieves up to $10{\times}$ trace reduction with mean errors of 5.47\% (IPC), 4.01\% (cache miss), and 2.97\% (cache latency), and delivers a $9.23{\times}$ end‑to‑end speedup with a pre‑trained Transformer. Importantly, \name preserves comparative conclusions: across BERTI, Bingo, and SPP, the absolute error in \emph{relative} IPC improvement remains low (4.05\% at $4{\times}$, 5.79\% at $10{\times}$), maintaining prefetcher ranking. On multi‑core full‑system runs, \name multiplies LoopPoint’s speedup by $5.6{\times}$ with moderate accuracy loss (IPC/cache‑miss/cache‑latency errors of 9.6\%/16.3\%/8.3\%), validating orthogonality to region‑level sampling.
 
-By decoupling pruning from ill-defined per-instruction cycles and grounding it in an aggregate-consistent surrogate, VitaBeta offers a principled, practical path to faster, faithful architectural simulation.
-
-% ### paper edit ends
+By casting fine‑grained pruning as learning from aggregates and coupling it with exact segmentation, \name turns a single profiling pass into a robust driver for high‑fidelity acceleration. Looking ahead, we see three promising directions: (i) cross‑microarchitecture transfer via light re‑profiling and fine‑tuning of \pts; (ii) co‑run \pts features and synchronization‑aware guards to further stabilize multi‑core pruning; and (iii) anchors beyond IPC (e.g., memory‑system signals) to target specific studies. We believe \name provides a practical path to substantially faster, faithful architectural simulation, enabling broader design sweeps and more timely evaluation of emerging microarchitectural ideas.
 % \balance
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
- 
-  
- 
- 
-
 \end{document}
+
+```tex
+
+
+original methodology draft (mathematical formulation and other reasoning/deduction):
+
+```tex
+
+
+
+\section{Methodology}
+\label{sec:methodology}
+
+
+
+\subsection{Design Goals and Problem View}
+VitaBeta performs fine-grained pruning by learning a contiguous, per-instruction latent signal---the \emph{Phase-Transition Surrogates} (PTS)---subject to aggregate constraints. We \emph{anchor} PTS to retire-group quantities exposed by the simulator (e.g., instruction-per-cycle recorded at ROB retirement). PTS is a context-aware signal designed to be (i) consistent with group-level IPC and (ii) piecewise smooth so that change-point detection (CPD) on PTS aligns with microarchitectural phase shifts. 
+% After CPD, we preserve compact neighborhoods around the change points, meeting a target reduction budget.
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.99\linewidth]{images/workflow.pdf}
+    \caption{VitaBeta as multivariate imputation with aggregate constraints: features \(\to\) PTS; CPD on PTS \(\to\) budget-matched pruning via Algorithm~\ref{alg:adaptive_window}.}
+    \label{fig:workflow}
+\end{figure}
+
+
+
+% We call the per–retire-group performance quantity logged by the simulator (e.g., the number of instructions retired in a cycle, standardized within a training stream) the \emph{anchor} $r_k$ for group $k$; instructions that retire together constitute a retire group $\mathcal{G}_k$.
+\textbf{Clarifications.}
+We use \emph{anchor} to denote a measured performance quantity at ROB retire-group granularity (\eg group IPC). Instructions that emit together from ROB buffer form a \emph{retire group}; the anchor value $r_k$ is logged from an initial simulation per group $k$. During training, \pts is constrained so that the \emph{mean} \pts across instructions in group $k$ equals (up to standardization) the anchor $r_k$. 
+
+
+
+Figure~\ref{fig:saits} provides a concrete example illustrating the training process using the data from Table~\ref{tab:example}.
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Example of profiled dataset from an initial simulation  with group \emph{anchors} for training.}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{c|c|c|c|c|c|c}
+\toprule
+\textbf{Index (\(t\))} & \textbf{PC} & \textbf{Address} & \textbf{Opcode} & \textbf{RD} & \textbf{Group ID} & \textbf{Anchor \(r_{g(t)}\)} \\
+\midrule
+1 & 0x0018 & 16  & 2 & $\infty$ & 17 & 0.132 \\
+2 & 0x0040 & 32  & 0 & 2        & 18 & 0.425 \\
+3 & 0x0044 & 8   & 0 & 3        & 19 & 0.345 \\
+4 & 0x004C & 64  & 1 & 4        & 19 & 0.345 \\
+5 & 0x0050 & 1   & 2 & $\infty$ & 19 & 0.345 \\
+\bottomrule
+\end{tabular}}
+\label{tab:example}
+\end{table}
+
+
+\subsection{Data Model and Anchors}
+Let the dynamic instruction sequence be \(T=\{1,\ldots,|T|\}\). Each instruction \(t\in T\) has a feature vector \(u_t\in\mathbb{R}^{D_f}\) (PC, opcode, address abstractions, locality summaries, etc.). The trace is partitioned into retire groups \(\{\mathcal{G}_k\}_{k=1}^{K}\), and we observe an anchor \(r_k\) per group (e.g., group throughput). Let \(g(t)=k\) map instruction \(t\) to its group.
+
+A sequence model \(f_\theta\) (Transformer backbone) outputs PTS
+\[
+s_t \;=\; f_\theta\!\Big(\{u_\tau\}_{\tau\in\mathcal{W}(t)},\,\mathrm{PE}(t)\Big),
+\]
+with a local context window \(\mathcal{W}(t)\) and positional encodings \(\mathrm{PE}(\cdot)\). We require \emph{aggregate consistency}:
+\begin{equation}
+\label{eq:agg-consistency}
+\mu_k(s)\;\triangleq\;\frac{1}{|\mathcal{G}_k|}\sum_{t\in\mathcal{G}_k} s_t \;\approx\; \tilde{r}_k,
+\end{equation}
+where anchors are standardized per training stream,
+\[
+\tilde{r}_k=\frac{r_k-\bar{r}}{\mathrm{sd}(r)},\quad \bar{r}=\frac{1}{K}\sum_{k=1}^K r_k.
+\]
+
+\textbf{Standardization and identifiability.}
+Because \eqref{eq:agg-consistency} is affine-invariant in $s$, we remove shift/scale ambiguity by standardizing anchors per stream and penalizing per-chunk PTS moments (zero mean, unit variance), which makes the anchor consistency \emph{identifiable} up to small optimization error. A one-parameter post-hoc scale \(c\) can be retained for diagnostics but is fixed to \(1\) during training.
+
+\subsection{Learning as Imputation with Aggregate Constraints}
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.99\linewidth]{images/ort_mit2.pdf}
+\caption{Training schematic: feature masking (FR/MI) for PTS prediction.  }
+\label{fig:saits}
+\end{figure*}
+
+
+
+\label{subsec:learning}
+We train \(f_\theta\) to (i) reconstruct visible features, (ii) impute artificially masked features, and (iii) produce a PTS that satisfies group-level consistency while remaining CPD-friendly.
+
+\textbf{Masking.}
+Let \(B_t^{(d)}\in\{0,1\}\) indicate whether feature \(d\) of \(u_t\) is originally observed, \(I_t^{(d)}\in\{0,1\}\) whether we \emph{artificially} mask it, and \(M_t^{(d)}=B_t^{(d)}(1-I_t^{(d)})\) be entries visible to the model. The model outputs reconstructed features \(\tilde{u}_t\) and PTS \(s_t\).
+
+\textbf{Feature reconstruction (FR).}
+\begin{equation}
+\label{eq:fr}
+\mathcal{L}_{\mathrm{FR}}
+=\frac{\sum_{t,d}M_t^{(d)}\,\ell_d\!\big(\tilde{u}_t^{(d)},u_t^{(d)}\big)}{\sum_{t,d}M_t^{(d)}},
+\end{equation}
+with \(\ell_d\) MAE for numeric and CE for categorical dimensions.
+
+\textbf{Masked imputation (MI).}
+\begin{equation}
+\label{eq:mi}
+\mathcal{L}_{\mathrm{MI}}
+=\frac{\sum_{t,d}I_t^{(d)}\,\ell_d\!\big(\tilde{u}_t^{(d)},u_t^{(d)}\big)}{\sum_{t,d}I_t^{(d)}}.
+\end{equation}
+
+\textbf{Aggregate consistency (AC).}
+We penalize discrepancies between group-mean PTS and standardized anchors using Huber loss \(\rho_\delta\):
+\begin{equation}
+\label{eq:ac}
+\mathcal{L}_{\mathrm{AC}}
+=\frac{1}{|T|}\sum_{k=1}^K |\mathcal{G}_k|\;
+\rho_\delta\!\Big(\mu_k(s)-\tilde{r}_k\Big).
+\end{equation}
+In mini-batch training, replace \(\mathcal{G}_k\) by \(\mathcal{H}_k=\mathcal{G}_k\cap\mathcal{B}\) and weight by \(|\mathcal{H}_k|\), which preserves the per-instruction normalization.
+
+\textbf{Contiguity and normalization.}
+We encourage a CPD-friendly contiguous latent with total variation and moment penalties:
+\begin{align}
+\label{eq:tv}
+\mathcal{L}_{\mathrm{TV}}&=\frac{1}{|T|-1}\sum_{t=2}^{|T|} |s_t-s_{t-1}|,\\
+\label{eq:norm}
+\mathcal{L}_{\mathrm{NORM}}&=\big(\bar{s}\big)^2+\big(\mathrm{Var}(s)-1\big)^2,\quad
+\bar{s}=\tfrac{1}{|T|}\sum_{t=1}^{|T|} s_t.
+\end{align}
+
+\textbf{Overall objective.}
+\begin{equation}
+\label{eq:total}
+\mathcal{L}=\mathcal{L}_{\mathrm{FR}}+\lambda\,\mathcal{L}_{\mathrm{MI}}+\gamma\,\mathcal{L}_{\mathrm{AC}}+\eta\,\mathcal{L}_{\mathrm{TV}}+\xi\,\mathcal{L}_{\mathrm{NORM}},
+\end{equation}
+with \(\lambda{=}1\), \(\gamma{=}1\), and \((\eta,\xi)\) tuned on held‑out traces. We instantiate \(f_\theta\) with compact attention-based imputers; any backbone that yields a contiguous latent works.
+
+\textbf{Optional scale calibration.}
+If desired, estimate a single scalar \(c\) after training by
+\[
+c^\star=\frac{\sum_k |\mathcal{G}_k|\,\tilde{r}_k\,\mu_k(s)}{\sum_k |\mathcal{G}_k|\,\tilde{r}_k^2},
+\]
+and keep it fixed at inference.
+
+\textbf{Affine identifiability (do we really need this?)}
+With standardized anchors \(\{\tilde{r}_k\}\) and \(\mathcal{L}_{\mathrm{NORM}}\) enforcing \(\bar{s}\!\approx\!0\), \(\mathrm{Var}(s)\!\approx\!1\), the minimizer of \(\mathcal{L}_{\mathrm{AC}}\) is invariant only to the identity affine map: any \(s'_t=a s_t+b\) that (approximately) minimizes \(\mathcal{L}_{\mathrm{AC}}\) must satisfy \(a\!\approx\!1\), \(b\!\approx\!0\) (under strictly convex loss near 0 and \(\mathrm{Cov}(\mu(s),\tilde{r})>0\)). \emph{Sketch.} Group-averaging yields \(\mu_k(s')=a\mu_k(s)+b\). Minimizing \(\sum_k |\mathcal{G}_k|\rho\big(\mu_k(s')-\tilde{r}_k\big)\) over \((a,b)\) with the stated moment constraints gives normal equations whose unique solution is \(a{=}1\), \(b{=}0\). 
+
+
+\subsection{PTS Inference at Scale}
+Training uses overlapping chunks to control memory; inference concatenates chunkwise PTS with overlap blending. We start with a higher \(\eta\) in \eqref{eq:tv} (to avoid spurious jaggedness) and anneal \(\eta\) so that PTS tightens around genuine transitions near convergence.
+
+\subsection{Change-Point Detection (CPD) on PTS}
+\label{subsec:cpd}
+We segment \(s_{1:|T|}\) with PELT (Pruned Exact Linear Time) using an \emph{autoregressive} segment cost (AR order \(p\)) from \texttt{ruptures}. We use a single class of \emph{BIC-style} penalties and avoid manual tuning by sweeping a small grid of multipliers:
+\[
+\beta_j \;=\; \alpha_j\,(p{+}1)\,\log n, \qquad \alpha_j \in \mathcal{A},
+\]
+where \(n\) is the length of the PTS tile and \(\mathcal{A}\) is a short list (e.g., 8–16 values). For each \(\beta_j\), we run PELT once to obtain change points \(\mathcal{C}_j\). After windowing (next subsection), we select the segmentation whose preserved-instruction count \(P_j\) is closest to the target budget \(D=\lfloor|T|(1-r)\rfloor\) (ties broken by smaller \(P_j\) and fewer segments). This "range over BIC‑style penalties" eliminates manual tuning while retaining PELT’s exactness per \(\beta_j\). For very long traces, we apply CPD in overlapping tiles and deduplicate boundaries near tile edges.
+
+\subsection{Adaptive Instruction Interval Calculation}
+\label{instr_removal}
+Given the chosen change points \(\mathcal{C}\), we preserve asymmetric windows around them and prune the rest to match a target reduction \(r\). We adopt the following routine.
+
+\begin{algorithm}[!htbp]
+\small
+\setlength{\textfloatsep}{4pt}
+\caption{Adaptive Instruction Interval Calculation with Asymmetric Adjustment}
+\label{alg:adaptive_window}
+\begin{algorithmic}[1]
+\Require Change points \(\mathcal{C}\subseteq\{1,\ldots,|T|\}\), total instructions \(|T|\), target reduction rate \(r\in(0,1)\), tolerance \(\epsilon\in(0,1)\)
+\Ensure Preserved instruction intervals \(\mathcal{M}\)
+\State \(D \gets \lfloor |T| \times (1 - r) \rfloor\) \Comment{Desired number of instructions}
+\State \(W_{\min} \gets 1\); \(W_{\max} \gets |T|\); \(\mathcal{M}^\star \gets \varnothing\); \(P^\star \gets 0\)
+\Function{MakeWindow}{$c,W$}
+  \State \(\Delta_L \gets \left\lfloor \frac{W-1}{2} \right\rfloor\), \(\Delta_R \gets W-1-\Delta_L\)
+  \State \(s \gets c - \Delta_L\), \(e \gets c + \Delta_R\)
+  \If{\(s < 1\)} \Comment{Shift right if left boundary exceeded}
+    \State \(e \gets \min(|T|, e + (1 - s))\); \(s \gets 1\)
+  \EndIf
+  \If{\(e > |T|\)} \Comment{Shift left if right boundary exceeded}
+    \State \(s \gets \max(1, s - (e - |T|))\); \(e \gets |T|\)
+  \EndIf
+  \State \Return \([s,e]\)
+\EndFunction
+
+\While{\(W_{\min} \leq W_{\max}\)}
+    \State \(W \gets \left\lfloor \frac{W_{\min} + W_{\max}}{2} \right\rfloor\)
+    \State Initialize empty list \(\mathcal{R}\)
+    \For{each \(c \in \mathcal{C}\)} 
+        \State Add interval  {MakeWindow}$(c,W)$ to \(\mathcal{R}\)
+    \EndFor
+    \State \(\mathcal{M} \gets\) MergeOverlaps\((\mathcal{R})\)
+    \State \(P \gets \sum_{[s,e] \in \mathcal{M}} (e - s + 1)\)
+    \If{\(|P - D| < |P^\star - D|\)} \(\mathcal{M}^\star \gets \mathcal{M}\); \(P^\star \gets P\) \EndIf
+    \If{\(|P - D| \leq D \times \epsilon\)} \Return \(\mathcal{M}\) \EndIf
+    \If{\(P < D\)} \State \(W_{\min} \gets W + 1\) \Else \State \(W_{\max} \gets W - 1\) \EndIf
+\EndWhile
+\State \Return \(\mathcal{M}^\star\) \Comment{Best-effort if tolerance unmet}
+\end{algorithmic}
+\end{algorithm}
+
+In practice, asymmetricity arises near the boundaries or when change points cluster; the MergeOverlaps step ensures contiguous kept regions without duplication. If desired, one can make \(W\) depend on local PTS jump magnitude or model uncertainty, but we use a global \(W\) for determinism and simplicity.
+
+\subsection{A Learning-Free Surrogate (Beta Metric)}
+\label{subsec:beta}
+When learning is unavailable, we use a heuristic surrogate that is still contiguous and phase-sensitive:
+\begin{equation}
+\label{eq:beta}
+B_t \;=\; \alpha_1\,\ln\big(1+\mathrm{RD}_t\big)\;+\;\alpha_2\,\big|\Delta\mathrm{PC}_t\big|\;+\;\alpha_3\,\big|\Delta r_{g(t)}\big|,
+\end{equation}
+where \(\mathrm{RD}_t\) is reuse distance, \(\Delta\mathrm{PC}_t\) encodes control-flow change, and \(\Delta r_k=r_k-r_{k-1}\) is the adjacent \emph{group}-anchor gradient, broadcast to instructions in group \(k\). We use \((\alpha_1,\alpha_2,\alpha_3)=(0.5,0.3,0.2)\). CPD and Algorithm~\ref{alg:adaptive_window} apply unchanged to \(B_t\).
+
+
+\subsection{Examples of PTS Estimation and Beta Metric}
+\label{sec3.2}
+Figure~\ref{fig:2} (a) compares a naive stepwise anchor signal (forward-filled group IPC) against the Transformer-learned PTS over a 60K-instruction span. The learned PTS smooths within groups while remaining responsive across groups, producing clearer change points and more faithful preserved chunks. Figure~\ref{fig:2}(b) zooms to a 1K-instruction window, where anchor signal (forward-filled IPC) exhibit flat plateaus; the Beta Metric reveals subtle transitions that anchor signal hides. PTS/Beta Metric is a surrogate phase-sensitivity signal anchored to IPC or other measurable aggregates.
+\begin{figure}[!htbp]
+    \centering
+    \captionsetup{skip=3pt}
+    \captionsetup[subfigure]{font=footnotesize, skip=1pt}
+    \begin{subfigure}[b]{0.99\columnwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/intuition.pdf}
+        \caption{Transformer-learned PTS vs. forward-filled IPC.}
+        \label{fig:ipc_imputation}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.99\columnwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/ipc_change_point_detection.pdf}
+        \caption{Heuristic Beta Metric as a surrogate signal.}
+        \label{fig:beta_approach}
+    \end{subfigure}
+    \caption{(a) Case study on a 60K-instruction window (\emph{BFS} trace). Change points and preserved intervals are marked using Transformer-learned PTS. (b) Case study on a 1K-instruction window (\emph{gcc-13B} trace). Top: forward-filled anchors (flat within groups); Bottom: heuristic Beta metric (contiguous, phase-sensitive). Shaded regions denote preserved chunks.}
+    \label{fig:2}
+\end{figure} 
+\subsection{Sanity Bounds for Pruning Error}
+Suppose CPD partitions \(T\) into segments \(\{\mathcal{S}_j\}\) within which a length-normalized additive performance functional \(F(t)\) varies by at most \(\Delta_j\). If all true regime boundaries lie inside preserved windows and we remove \(N_{\mathrm{pruned}}\) instructions across segments, then
+\[
+\big|\widehat{F}-F\big|\ \le\ \frac{1}{|T|}\sum_j \Delta_j\, |\mathcal{S}_j\setminus\text{kept}|\ \le\ \Delta_{\max}\frac{N_{\mathrm{pruned}}}{|T|}
+,\quad \Delta_{\max}=\max_j\Delta_j.
+\]
+Thus, for piecewise-stable behaviors the error scales with the pruned fraction, while preserving transition neighborhoods controls bias.
+
+\subsection{Implementation Notes}
+\label{subsec:impl}
+\textbf{Backbone and training.} We use attention-based imputation models; the detailed architecture of the model is orthogonal to VitaBeta as long as \eqref{eq:ac}–\eqref{eq:total} are enforced.
+
+\textbf{Tiling.} PTS is produced in overlapping tiles (50\% overlap) and blended linearly. \textbf{CPD.} We use PELT with AR cost (order \(p\in\{2,5,8\}\)) and a \emph{BIC-style} penalty \(\beta=\alpha (p{+}1)\log n\). We sweep a short grid of \(\alpha\) values per tile and select the segmentation whose post-window preserved length best matches the target---no separate penalty schemes are used. 
+
+\textbf{Integration.} Within SimPoint/LoopPoint regions, PTS/CPD runs \emph{inside} each region; preserved chunks are concatenated per region and upstream weights remain unchanged.
+
+```
