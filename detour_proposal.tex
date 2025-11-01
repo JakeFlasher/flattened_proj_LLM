@@ -1,0 +1,64 @@
+ 
+
+% \title{Learning Phase-Transition Signals with Group-Average Matching for Fine-Grained Trace Pruning}
+
+% \author{Chengao~Shi,
+%         Zhenguo~Liu,~\IEEEmembership{Student Member,~IEEE,}
+%         Chen~Ding,~\IEEEmembership{Member,~IEEE,}
+%         and~Jiang~Xu,~\IEEEmembership{Member,~IEEE}%
+% \IEEEcompsocitemizethanks{
+%     \IEEEcompsocthanksitem Chengao Shi is with the Department of Electronic and Computer Engineering, The Hong Kong University of Science and Technology. E-mail: \{cshiai\}@connect.ust.hk.
+%     \IEEEcompsocthanksitem Zhenguo Liu and Jiang Xu are with Microelectronics Thrust, The Hong Kong University of Science and Technology (Guangzhou). E-mail: \{zliu094, jiang.xu\}@hkust-gz.edu.cn.
+%     \IEEEcompsocthanksitem Chen Ding is with the Department of Computer Science, University of Rochester. E-mail: cding@cs.rochester.edu.}%
+% }
+
+% \markboth{IEEE Transactions on Parallel and Distributed Systems,~Vol.~xx, No.~xx, Month~Year}%
+ 
+
+\begin{abstract}
+pass
+\end{abstract}
+\begin{IEEEkeywords}Trace-based simulation, workload characterization, simulation speedup, multicore systems, Transformers
+\end{IEEEkeywords}
+% }
+
+\maketitle
+
+\section{Background}
+Modern back-end flows at advanced nodes frequently plateau with a handful of stubborn setup violations \emph{after} detailed routing, when physical flexibility is minimal and ECO (engineering change order) edits must be local and safe. While commercial post-route optimizers combine sizing, buffering, and limited rewiring, they remain global heuristics and can leave residual negative WNS/TNS due to interconnect-dominated delays and router-induced detours \cite{Coudert-ISQED02,CadenceInnovus-DS}. The detour phenomenon---a routed path deviating significantly from a direct rectilinear connection---inflates net delay and is well rationalized by classical rectilinear routing theory: even in grid graphs, each ``detour'' incrementally adds twice the deviation to path length, i.e., $L = d_{M} + 2d$ where $d_{M}$ is Manhattan distance and $d$ counts detours \cite{Hadlock-Networks77}. In practice, the post-route database already encodes final RC parasitics, so correcting avoidable detours with minimal movement is attractive, provided that legalization, routability, and timing safety are enforced.
+
+Our work targets this ``last-mile'' by (i) identifying \emph{detour cells} on critical reg2reg paths using only geometric and topological cues from the post-route database, (ii) computing movement directions and bounds from path topology and multi-fanout constraints, then (iii) solving a lightweight linear program (LP) on strongly connected components (SCCs) of the timing/connectivity graph to propose cell displacements that provably do not lengthen any critical segment, and (iv) validating each candidate in a sandbox via refinePlace/ecoRoute with an arc-group timing score to filter regressions. Decomposing by SCCs reduces solve size and preserves independence guarantees \cite{Tarjan72}, while LP variables are per-cell $(\Delta x,\Delta y)$ with bounds built from slack margins and directional hints.
+
+This post-route framing complements earlier phases: timing-driven global placement (GP) can reduce later detours by weighting nets or paths, but modeling final post-DR parasitics remains difficult; recent works bridge GR–DR timing mismatch via learned predictors \cite{Chhabria-ML-RouteConsistency23} or GPU path-aware GP \cite{Shi-TDPlace-2025}, yet late-stage residual violations still occur. Compared with heavy logic changes (e.g., remapping to spare cells), small cell moves preserve logic and power integrity and better isolate side-effects.
+
+\section{Related Work}
+\subsection{Post-route timing ECO (logic- and route-centric)}
+Classical ECO methods exploit spare cells, technology remapping, and negotiation-based rerouting to fix timing after mask or late in place-and-route. Chen \emph{et~al.} and Ho/Jiang/Chang propose ECO timing optimization using spare cells plus remapping/TRECO, often accompanied by incremental routing \cite{Chen-TCAD10,Ho-ASP-DAC10,Chang-DAC12,Chang-TCAD13}. Wei \emph{et~al.} add negotiation-based re-routing and logic restructuring to arbitrate scarce resources among competing ECO paths \cite{Wei-ASP-DAC12}. These approaches can be powerful but change logic topology and consume spare resources. In contrast, our method keeps the netlist fixed and focuses on geometric detour relief with legality and routability checks inside a sandbox.
+
+\subsection{Incremental timing-driven placement near signoff}
+OWARU introduced \emph{free-space-aware path smoothing}: geometrically straightening critical paths and relocating gates into nearby whitespace, with integrated incremental STA; substantial WNS/TNS gains were reported on 14\,nm microprocessors \cite{Jung-ICCAD16,Jung-TCAD18}. Related incremental TDP integrates approximated signoff wire delay and regression-based cell delay to guide small moves under timing models \cite{Lee-TVLSI19}. Our work is philosophically close to OWARU in treating \emph{cell relocation} as a late-stage lever, but differs in (i) detour \emph{detection} without using detailed route modeling (a bounding-box/topology heuristic), (ii) an LP with per-edge ``non-increase'' constraints to avoid new critical segments, and (iii) a routability/timing arc-group \emph{scoring filter} in a tool sandbox to combat router non-determinism.
+
+\subsection{Earlier-phase timing-driven placement}
+Analytical and learning-based GP remains a major lever for downstream timing and congestion. Recent works incorporate path-level objectives or learn density/congestion targets that correlate with post-route outcomes, showing sizable TNS/WNS improvements versus prior academic placers \cite{Shi-TDPlace-2025,Agnesina-GOALPlace-2024}. These are upstream, global optimizations; our contribution is complementary: a \emph{post-route} ECO that iteratively nudges a small detour-inducing subset of cells with guardrails against regressions.
+
+\subsection{Routing, wirelength models, and detour metrics}
+HPWL is the ubiquitous placement proxy and FLUTE-based RSMT shows how routed length relates to bounding-box estimates \cite{Chu-FLUTE-TCAD08}. Theoretical detour penalties in rectilinear routing (Lee/Hadlock) justify bounding-box and directional heuristics for flagging detour cells \cite{Hadlock-Networks77}. We further exploit a practical detour upper bound akin to bounding-box short-side effects used in industry heuristics to reason about potential route elongation near obstacles \cite{US7251800}. During ECO validation, we rely on the implementation tool’s incremental legalizer/router; official Innovus documentation describes refinePlace/ecoRoute and the routing/interconnect optimization engine used in such flows \cite{CadenceInnovus-DS}. For open-source baselines, OpenROAD’s \texttt{repair\_timing} documents late-stage buffer/sizing ECO to compare against netlist-changing strategies \cite{OpenROAD-repairtiming}.
+
+\subsection{Legalization and small-move feasibility}
+Minimal-move legalization (e.g., Abacus) established the value of perturbing prior placement as little as possible \cite{Spindler-ISPD08}, a principle our sandbox follows when refining target locations. By constraining movements via slack margins and direction cones, and rejecting candidates that cannot legalize or route cleanly, our loop preserves layout stability.
+
+\subsection{Positioning and novelty}
+In summary, prior post-route ECOs either (i) change logic (spare-cell remapping, restructuring) \cite{Chen-TCAD10,Ho-ASP-DAC10,Chang-DAC12,Chang-TCAD13,Wei-ASP-DAC12}, or (ii) relocate cells using geometric smoothing plus timing-in-the-loop \cite{Jung-ICCAD16,Jung-TCAD18}, or (iii) rely on tool heuristics that may plateau. Our contribution is a \emph{detour-first} lens: (1) a fast, route-agnostic detour-cell detector from path topology; (2) SCC-decomposed LP that enforces per-segment non-increase constraints and slack-bounded movement; and (3) a practical sandbox screen with arc-group timing scoring to tame router variability. This division of labor keeps the model small, decisions interpretable, and integration risk low, while addressing precisely the post-route detours that often keep designs from closure.
+
+\smallskip
+\noindent\textbf{Scope note.} We target post-route reg2reg setup paths and preserve the netlist; hold-fixing and logic ECOs are out-of-scope, and can be handled by tool-native flows (e.g., OpenROAD \texttt{repair\_timing}) as needed \cite{OpenROAD-repairtiming}.
+
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+ 
+  
+ 
+ 
+
+\end{document}
